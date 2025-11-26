@@ -377,45 +377,66 @@ class WebsiteDiscovery:
                     'category': 'unknown'
                 }
         
-        # Save to database if session provided
+        # Save to database if session provided and filter out existing URLs
         if db_session:
-            from db.models import DiscoveredWebsite
+            from db.models import DiscoveredWebsite, ScrapedWebsite
             saved_count = 0
+            new_discoveries = {}
+            
+            # Get all existing URLs from both tables to filter out
+            existing_discovered_urls = set(
+                url[0] for url in db_session.query(DiscoveredWebsite.url).all()
+            )
+            existing_scraped_urls = set(
+                url[0] for url in db_session.query(ScrapedWebsite.url).all()
+            )
+            all_existing_urls = existing_discovered_urls | existing_scraped_urls
+            
+            logger.info(f"Found {len(all_existing_urls)} existing URLs in database (will filter from {len(all_discoveries)} discovered)")
+            
             for url, info in all_discoveries.items():
                 try:
-                    # Check if already exists
-                    existing = db_session.query(DiscoveredWebsite).filter(
-                        DiscoveredWebsite.url == url
-                    ).first()
+                    # Skip if URL already exists in either table
+                    if url in all_existing_urls:
+                        continue
                     
-                    if not existing:
-                        parsed = urlparse(url)
-                        discovered = DiscoveredWebsite(
-                            url=info['url'],
-                            domain=parsed.netloc,
-                            title=info.get('title', ''),
-                            snippet=info.get('snippet', ''),
-                            source=info['source'],
-                            search_query=info.get('search_query', ''),
-                            category=info.get('category', 'unknown')
-                        )
-                        db_session.add(discovered)
-                        saved_count += 1
+                    # Save new discovered website
+                    parsed = urlparse(url)
+                    discovered = DiscoveredWebsite(
+                        url=info['url'],
+                        domain=parsed.netloc,
+                        title=info.get('title', ''),
+                        snippet=info.get('snippet', ''),
+                        source=info['source'],
+                        search_query=info.get('search_query', ''),
+                        category=info.get('category', 'unknown')
+                    )
+                    db_session.add(discovered)
+                    saved_count += 1
+                    new_discoveries[url] = info
                 except Exception as e:
                     logger.error(f"Error saving discovered website {url}: {str(e)}")
                     continue
             
             try:
                 db_session.commit()
-                logger.info(f"Saved {saved_count} new discovered websites to database")
+                filtered_count = len(all_discoveries) - saved_count
+                logger.info(f"Saved {saved_count} new discovered websites to database (filtered out {filtered_count} existing URLs)")
             except Exception as e:
                 logger.error(f"Error committing discovered websites: {str(e)}")
                 db_session.rollback()
-        
-        unique_discoveries = list(all_discoveries.values())
-        logger.info(f"Discovered {len(unique_discoveries)} unique website URLs")
-        
-        return unique_discoveries
+                # If commit fails, return empty list to avoid processing duplicates
+                return []
+            
+            # Return only new discoveries
+            unique_discoveries = list(new_discoveries.values())
+            logger.info(f"Returning {len(unique_discoveries)} new unique website URLs (filtered from {len(all_discoveries)} total discovered)")
+            return unique_discoveries
+        else:
+            # If no db session, return all (but this shouldn't happen in production)
+            unique_discoveries = list(all_discoveries.values())
+            logger.info(f"Discovered {len(unique_discoveries)} unique website URLs (no DB session to filter)")
+            return unique_discoveries
     
     def search_duckduckgo_detailed(self, query: str, num_results: int = 10) -> List[Dict]:
         """

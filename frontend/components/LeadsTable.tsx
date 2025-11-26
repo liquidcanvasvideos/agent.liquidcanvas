@@ -4,14 +4,21 @@ import { useState, useEffect } from 'react'
 import { getLeads, type Lead, type LeadsResponse } from '@/lib/api'
 import { Mail, Phone, Globe, Filter } from 'lucide-react'
 
-export default function LeadsTable() {
+interface LeadsTableProps {
+  /** If true, only show leads that have emails and hide the email filter */
+  emailsOnly?: boolean
+}
+
+export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [total, setTotal] = useState(0)
   const [skip, setSkip] = useState(0)
   const [limit] = useState(50)
   const [loading, setLoading] = useState(true)
   const [category, setCategory] = useState<string>('')
-  const [hasEmail, setHasEmail] = useState<boolean | undefined>(undefined)
+  const [hasEmail, setHasEmail] = useState<boolean | undefined>(
+    emailsOnly ? true : undefined
+  )
 
   const categories = [
     'interior_decor',
@@ -61,19 +68,21 @@ export default function LeadsTable() {
               </option>
             ))}
           </select>
-          <select
-            value={hasEmail === undefined ? '' : hasEmail.toString()}
-            onChange={(e) => {
-              const value = e.target.value
-              setHasEmail(value === '' ? undefined : value === 'true')
-              setSkip(0)
-            }}
-            className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-          >
-            <option value="">All Leads</option>
-            <option value="true">Has Email</option>
-            <option value="false">No Email</option>
-          </select>
+          {!emailsOnly && (
+            <select
+              value={hasEmail === undefined ? '' : hasEmail.toString()}
+              onChange={(e) => {
+                const value = e.target.value
+                setHasEmail(value === '' ? undefined : value === 'true')
+                setSkip(0)
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+            >
+              <option value="">All Leads</option>
+              <option value="true">Has Email</option>
+              <option value="false">No Email</option>
+            </select>
+          )}
           <div className="ml-auto text-sm text-gray-600">
             Total: {total.toLocaleString()}
           </div>

@@ -39,7 +39,9 @@ export default function Dashboard() {
   const [automationStatus, setAutomationStatus] = useState<AutomationStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [connectionError, setConnectionError] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'leads' | 'emails' | 'jobs' | 'websites' | 'settings'>('overview')
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'leads' | 'scraped_emails' | 'emails' | 'jobs' | 'websites' | 'settings'
+  >('overview')
 
   useEffect(() => {
     loadData()
@@ -123,6 +125,7 @@ export default function Dashboard() {
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'websites', label: 'Websites', icon: Globe },
     { id: 'leads', label: 'Leads', icon: Users },
+    { id: 'scraped_emails', label: 'Scraped Emails', icon: Mail },
     { id: 'emails', label: 'Emails', icon: Mail },
     { id: 'jobs', label: 'Jobs', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -246,6 +249,8 @@ export default function Dashboard() {
         {activeTab === 'websites' && <WebsitesTable />}
 
         {activeTab === 'leads' && <LeadsTable />}
+
+        {activeTab === 'scraped_emails' && <LeadsTable emailsOnly />}
 
         {activeTab === 'emails' && <EmailsTable />}
 

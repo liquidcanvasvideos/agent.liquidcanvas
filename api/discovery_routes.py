@@ -39,9 +39,29 @@ async def trigger_website_discovery(
     Returns immediately, runs in background
     """
     try:
-        # Save location and categories to settings for the job
+        # Check if automation is enabled
         from utils.app_settings import AppSettingsManager
         settings_manager = AppSettingsManager(db)
+        if not settings_manager.get_automation_enabled():
+            raise HTTPException(
+                status_code=400,
+                detail="Automation is disabled. Please enable the Master Switch first."
+            )
+        
+        # Check if a job is already running
+        from db.models import ScrapingJob
+        running_job = db.query(ScrapingJob).filter(
+            ScrapingJob.job_type == "fetch_new_art_websites",
+            ScrapingJob.status == "running"
+        ).first()
+        
+        if running_job:
+            raise HTTPException(
+                status_code=400,
+                detail="A discovery job is already running. Please stop it first."
+            )
+        
+        # Save location and categories to settings for the job
         if location:
             settings_manager.set("search_location", location)
         if categories:
@@ -57,6 +77,8 @@ async def trigger_website_discovery(
             "categories": categories or "all",
             "note": "Check the Activity Feed for progress updates"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error triggering discovery: {e}")
         raise HTTPException(

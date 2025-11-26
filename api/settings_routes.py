@@ -196,7 +196,8 @@ async def set_search_interval(
 @router.get("/templates", response_model=List[EmailTemplateResponse])
 async def get_email_templates(
     category: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Get all email templates, optionally filtered by category"""
     query = db.query(EmailTemplate)

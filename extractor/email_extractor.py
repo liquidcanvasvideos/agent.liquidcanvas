@@ -84,6 +84,8 @@ class EmailExtractor:
         if not email or len(email) < 5:
             return False
         
+        email_lower = email.lower().strip()
+        
         # Filter out common false positives
         false_positives = [
             "example.com",
@@ -94,9 +96,78 @@ class EmailExtractor:
             "test@test"
         ]
         
-        email_lower = email.lower()
         for fp in false_positives:
             if fp in email_lower:
+                return False
+        
+        # Filter out image file extensions and other file types
+        # Common image formats that might be mistaken for emails (e.g., hero@2x.jpg)
+        image_extensions = [
+            '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.bmp', '.ico',
+            '.tiff', '.tif', '.heic', '.heif', '.avif', '.apng'
+        ]
+        
+        # Other file extensions that might be mistaken for emails
+        other_file_extensions = [
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.zip', '.rar', '.tar', '.gz',
+            '.mp4', '.mp3', '.avi', '.mov', '.wmv', '.flv', '.webm',
+            '.css', '.js', '.json', '.xml', '.html', '.htm'
+        ]
+        
+        # Check if email ends with a file extension
+        for ext in image_extensions + other_file_extensions:
+            if email_lower.endswith(ext):
+                return False
+        
+        # Split email into local and domain parts
+        if '@' not in email_lower:
+            return False
+        
+        parts = email_lower.split('@')
+        if len(parts) != 2:
+            return False
+        
+        local_part, domain_part = parts
+        
+        # Validate local part (before @)
+        if not local_part or len(local_part) < 1:
+            return False
+        
+        # Validate domain part (after @)
+        if not domain_part or len(domain_part) < 4:  # At least "x.co"
+            return False
+        
+        # Domain should have a dot (TLD separator)
+        if '.' not in domain_part:
+            return False
+        
+        # Split domain into name and TLD
+        domain_parts = domain_part.split('.')
+        if len(domain_parts) < 2:
+            return False
+        
+        tld = domain_parts[-1].lower()
+        
+        # Filter out common false positive TLDs that are actually file extensions
+        invalid_tlds = [
+            'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico',
+            'pdf', 'doc', 'docx', 'xls', 'xlsx', 'zip', 'rar', 'tar', 'gz',
+            'mp4', 'mp3', 'avi', 'mov', 'wmv', 'flv', 'webm',
+            'css', 'js', 'json', 'xml', 'html', 'htm'
+        ]
+        
+        if tld in invalid_tlds:
+            return False
+        
+        # TLD should be at least 2 characters (like .com, .org, etc.)
+        if len(tld) < 2:
+            return False
+        
+        # Domain name (before TLD) should not be just numbers (e.g., "2x" in "hero@2x.jpg")
+        domain_name = '.'.join(domain_parts[:-1])
+        if domain_name.isdigit() or len(domain_name) < 2:
+            # Allow single character domains only if they're common (like "x.co")
+            if domain_name not in ['x', 'i', 'a']:
                 return False
         
         return True

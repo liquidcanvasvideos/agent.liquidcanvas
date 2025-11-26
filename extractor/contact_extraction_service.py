@@ -262,15 +262,18 @@ class ContactExtractionService:
                 "contact_pages_found": 0
             }
             
-            # Extract from main page
+            # Extract from main page using enhanced extraction
             self.activity_logger.log_extraction_progress(website_id, "Extracting from main page")
+            logger.info(f"Extracting contacts from main page: {website.url}")
             self._extract_from_page(website_id, website.raw_html, website.url, results)
             
-            # Crawl and extract from contact pages
+            # Crawl and extract from contact pages (expanded list)
             try:
                 self.activity_logger.log_extraction_progress(website_id, "Crawling contact pages")
+                logger.info(f"Discovering contact pages for: {website.url}")
                 contact_pages = self.contact_crawler.detect_contact_page(website.url)
                 results["contact_pages_found"] = len(contact_pages)
+                logger.info(f"Found {len(contact_pages)} contact pages")
                 
                 if contact_pages:
                     self.activity_logger.log_extraction_progress(
@@ -280,6 +283,7 @@ class ContactExtractionService:
                     )
                 
                 for contact_url, contact_html in self.contact_crawler.crawl_contact_pages(website.url):
+                    logger.info(f"Extracting from contact page: {contact_url}")
                     self._extract_from_page(website_id, contact_html, contact_url, results)
             except Exception as e:
                 logger.warning(f"Failed to crawl contact pages: {e}")

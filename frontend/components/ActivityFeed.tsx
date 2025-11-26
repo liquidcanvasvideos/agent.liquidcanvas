@@ -75,7 +75,7 @@ export default function ActivityFeed({ limit = 50, autoRefresh = true }: Activit
       case 'warning':
         return <AlertCircle className="w-4 h-4 text-yellow-500" />
       default:
-        return <Info className="w-4 h-4 text-blue-500" />
+        return <Info className="w-4 h-4 text-olive-600" />
     }
   }
 
@@ -107,7 +107,7 @@ export default function ActivityFeed({ limit = 50, autoRefresh = true }: Activit
     <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200/50 p-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
-          <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg">
+          <div className="p-2 bg-olive-600 rounded-lg">
             <Activity className="w-5 h-5 text-white" />
           </div>
           <h2 className="text-xl font-bold text-gray-900">Activity Feed</h2>
@@ -122,7 +122,7 @@ export default function ActivityFeed({ limit = 50, autoRefresh = true }: Activit
 
       {loading && activities.length === 0 ? (
         <div className="text-center py-8">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-2" />
+          <Loader2 className="w-8 h-8 animate-spin text-olive-600 mx-auto mb-2" />
           <p className="text-gray-500">Loading activities...</p>
         </div>
       ) : activities.length === 0 ? (

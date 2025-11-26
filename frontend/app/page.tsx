@@ -126,7 +126,7 @@ export default function Dashboard() {
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'websites', label: 'Websites', icon: Globe },
     { id: 'leads', label: 'Leads', icon: Users },
-    { id: 'scraped_emails', label: 'Scraped Emails', icon: AtSign },
+    { id: 'scraped_emails', label: '📧 Scraped Emails', icon: AtSign },
     { id: 'emails', label: 'Outreach Emails', icon: Mail },
     { id: 'jobs', label: 'Jobs', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -136,13 +136,13 @@ export default function Dashboard() {
   useEffect(() => {
     console.log('Available tabs:', tabs.map(t => t.id))
     console.log('Scraped Emails tab exists:', tabs.find(t => t.id === 'scraped_emails'))
-  }, [])
+  }, [tabs])
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+      <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent mb-4"></div>
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-olive-600 border-t-transparent mb-4"></div>
           <div className="text-xl font-semibold text-gray-900">Loading dashboard...</div>
           <div className="text-sm text-gray-600 mt-2">Connecting to backend...</div>
         </div>
@@ -151,13 +151,13 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-indigo-50/30 to-purple-50/30">
+    <div className="min-h-screen bg-white">
       {/* Modern Header */}
       <header className="bg-white/80 backdrop-blur-lg shadow-sm border-b border-gray-200/50 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold text-black">
                 Art Outreach Scraper
               </h1>
               <p className="text-gray-600 mt-1 text-sm">
@@ -221,7 +221,7 @@ export default function Dashboard() {
                     flex items-center space-x-2 px-4 py-2.5 rounded-lg font-medium text-sm transition-all
                     ${
                       activeTab === tab.id
-                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                        ? 'bg-olive-600 text-white shadow-md'
                         : 'text-gray-700 hover:bg-gray-100/80'
                     }
                   `}

@@ -131,6 +131,12 @@ export default function Dashboard() {
     { id: 'jobs', label: 'Jobs', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },
   ]
+  
+  // Debug: Log tabs on mount
+  useEffect(() => {
+    console.log('Available tabs:', tabs.map(t => t.id))
+    console.log('Scraped Emails tab exists:', tabs.find(t => t.id === 'scraped_emails'))
+  }, [])
 
   if (loading) {
     return (

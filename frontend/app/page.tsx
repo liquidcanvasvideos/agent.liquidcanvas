@@ -24,7 +24,7 @@ import {
   Search,
   Zap,
   XCircle,
-  MailCheck
+  AtSign
 } from 'lucide-react'
 
 interface AutomationStatus {
@@ -126,7 +126,7 @@ export default function Dashboard() {
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'websites', label: 'Websites', icon: Globe },
     { id: 'leads', label: 'Leads', icon: Users },
-    { id: 'scraped_emails', label: 'Scraped Emails', icon: MailCheck },
+    { id: 'scraped_emails', label: 'Scraped Emails', icon: AtSign },
     { id: 'emails', label: 'Outreach Emails', icon: Mail },
     { id: 'jobs', label: 'Jobs', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },

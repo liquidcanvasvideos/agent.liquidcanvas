@@ -64,7 +64,7 @@ export default function SystemStatus({ automationStatus, jobs, loading }: System
   const getStatusColor = () => {
     if (!automationStatus?.automation_enabled) return 'bg-gray-500'
     if (isSearching) return 'bg-green-500'
-    return 'bg-blue-500'
+    return 'bg-olive-600'
   }
 
   const getStatusText = () => {
@@ -99,7 +99,7 @@ export default function SystemStatus({ automationStatus, jobs, loading }: System
   }
 
   return (
-    <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-xl shadow-lg p-6 text-white">
+    <div className="bg-black rounded-xl shadow-lg p-6 text-white">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           {/* Status Indicator */}
@@ -117,7 +117,7 @@ export default function SystemStatus({ automationStatus, jobs, loading }: System
                 <Loader2 className="w-5 h-5 animate-spin" />
               )}
             </div>
-            <div className="text-sm text-indigo-100 mt-1">
+            <div className="text-sm text-gray-300 mt-1">
               {automationStatus?.automation_enabled ? (
                 <>
                   Searching every {automationStatus.search_interval_seconds}s
@@ -137,7 +137,7 @@ export default function SystemStatus({ automationStatus, jobs, loading }: System
           <div className="flex items-center space-x-3 bg-white/20 backdrop-blur-sm rounded-lg px-4 py-3 border border-white/30">
             <Timer className="w-5 h-5" />
             <div>
-              <div className="text-xs text-indigo-200 mb-0.5">Next search in</div>
+              <div className="text-xs text-gray-300 mb-0.5">Next search in</div>
               <div className="text-2xl font-bold tabular-nums">
                 {formatTimeRemaining(timeRemaining)}
               </div>
@@ -153,13 +153,13 @@ export default function SystemStatus({ automationStatus, jobs, loading }: System
                 <div className="text-2xl font-bold">
                   {Object.values(jobs).filter(j => j.status === 'running').length}
                 </div>
-                <div className="text-indigo-200">Active Jobs</div>
+                <div className="text-gray-300">Active Jobs</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold">
                   {Object.values(jobs).filter(j => j.status === 'completed').length}
                 </div>
-                <div className="text-indigo-200">Completed</div>
+                <div className="text-gray-300">Completed</div>
               </div>
             </>
           )}

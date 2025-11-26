@@ -39,7 +39,7 @@ export default function ScrapeForm({ onScrape }: ScrapeFormProps) {
   return (
     <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200/50 p-6">
       <div className="flex items-center space-x-2 mb-4">
-        <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg">
+        <div className="p-2 bg-olive-600 rounded-lg">
           <Search className="w-5 h-5 text-white" />
         </div>
         <h2 className="text-xl font-bold text-gray-900">Scrape Website</h2>
@@ -57,13 +57,13 @@ export default function ScrapeForm({ onScrape }: ScrapeFormProps) {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com"
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-olive-500 focus:border-transparent transition-all"
               disabled={loading}
             />
             <button
               type="submit"
               disabled={loading || !url.trim()}
-              className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg flex items-center space-x-2"
+              className="px-6 py-3 bg-olive-600 text-white rounded-lg font-medium hover:bg-olive-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg flex items-center space-x-2"
             >
               {loading ? (
                 <>
@@ -116,7 +116,7 @@ export default function ScrapeForm({ onScrape }: ScrapeFormProps) {
                     href={result.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center space-x-1 text-indigo-600 hover:text-indigo-800 mt-2"
+                    className="inline-flex items-center space-x-1 text-olive-600 hover:text-olive-800 mt-2"
                   >
                     <span>View website</span>
                     <ExternalLink className="w-3 h-3" />

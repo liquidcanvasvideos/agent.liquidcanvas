@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel, ConfigDict
 from db.database import get_db
 from db.models import ScrapedWebsite, Contact, OutreachEmail, ScrapingJob, DiscoveredWebsite
+from utils.auth import get_current_user
 
 router = APIRouter()
 
@@ -143,7 +144,8 @@ async def get_leads(
 async def get_sent_emails(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Get sent emails with pagination"""
     query = db.query(
@@ -180,7 +182,8 @@ async def get_sent_emails(
 async def get_pending_emails(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Get pending/draft emails with pagination"""
     query = db.query(
@@ -227,7 +230,8 @@ def extract_contacts_for_website(website_id: int, db: Session):
 async def scrape_url(
     url: str,
     skip_quality_check: bool = Query(False),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """
     Scrape a URL and return results with contacts
@@ -315,7 +319,10 @@ async def scrape_url(
 
 
 @router.get("/stats", response_model=StatsResponse)
-async def get_stats(db: Session = Depends(get_db)):
+async def get_stats(
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """Get comprehensive statistics for dashboard"""
     
     # Leads/Contacts stats
@@ -404,7 +411,8 @@ async def get_job_status(
     limit: int = Query(20, ge=1, le=100),
     job_type: Optional[str] = None,
     status: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """
     Get status of background jobs
@@ -428,7 +436,10 @@ async def get_job_status(
 
 
 @router.get("/jobs/latest", response_model=Dict)
-async def get_latest_jobs(db: Session = Depends(get_db)):
+async def get_latest_jobs(
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """Get latest job execution for each job type"""
     job_types = [
         "fetch_new_art_websites",
@@ -472,7 +483,8 @@ async def get_activity(
     limit: int = Query(50, ge=1, le=200),
     activity_type: Optional[str] = None,
     status: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """
     Get real-time activity logs
@@ -561,7 +573,8 @@ async def get_discovered_websites(
     is_scraped: Optional[bool] = Query(None),
     source: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """
     Get list of discovered websites

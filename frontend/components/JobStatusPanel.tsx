@@ -20,7 +20,7 @@ export default function JobStatusPanel({ jobs, expanded = false }: JobStatusPane
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'running':
-        return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+        return <Loader2 className="w-5 h-5 text-olive-600 animate-spin" />
       case 'completed':
         return <CheckCircle2 className="w-5 h-5 text-green-500" />
       case 'failed':
@@ -33,7 +33,7 @@ export default function JobStatusPanel({ jobs, expanded = false }: JobStatusPane
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'running':
-        return 'bg-blue-100 text-blue-800 border-blue-200'
+        return 'bg-olive-100 text-olive-800 border-olive-200'
       case 'completed':
         return 'bg-green-100 text-green-800 border-green-200'
       case 'failed':
@@ -54,7 +54,7 @@ export default function JobStatusPanel({ jobs, expanded = false }: JobStatusPane
   return (
     <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200/50 p-6">
       <div className="flex items-center space-x-2 mb-4">
-        <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg">
+        <div className="p-2 bg-olive-600 rounded-lg">
           <Play className="w-5 h-5 text-white" />
         </div>
         <h2 className="text-xl font-bold text-gray-900">Job Status</h2>

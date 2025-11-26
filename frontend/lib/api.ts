@@ -1,7 +1,50 @@
 /**
  * API client for FastAPI backend
+ * Defaults to production URL, falls back to localhost for development
  */
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 
+  (typeof window !== 'undefined' && window.location.hostname !== 'localhost' 
+    ? `https://${window.location.hostname}/api/v1`
+    : 'http://localhost:8000/api/v1');
+
+/**
+ * Get auth token from localStorage
+ */
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem('auth_token')
+}
+
+/**
+ * Make authenticated API request
+ */
+async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = getAuthToken()
+  const headers = {
+    ...options.headers,
+    'Content-Type': 'application/json',
+  }
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  })
+  
+  // If unauthorized, redirect to login
+  if (response.status === 401) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token')
+      window.location.href = '/login'
+    }
+    throw new Error('Unauthorized')
+  }
+  
+  return response
+}
 
 export interface Lead {
   id: number;
@@ -182,7 +225,7 @@ export async function getLeads(
   if (category) params.append('category', category);
   if (hasEmail !== undefined) params.append('has_email', hasEmail.toString());
 
-  const res = await fetch(`${API_BASE}/leads?${params}`);
+  const res = await authenticatedFetch(`${API_BASE}/leads?${params}`);
   if (!res.ok) throw new Error('Failed to fetch leads');
   return res.json();
 }
@@ -191,7 +234,7 @@ export async function getLeads(
  * Get sent emails
  */
 export async function getSentEmails(skip = 0, limit = 50): Promise<EmailsResponse> {
-  const res = await fetch(`${API_BASE}/emails/sent?skip=${skip}&limit=${limit}`);
+  const res = await authenticatedFetch(`${API_BASE}/emails/sent?skip=${skip}&limit=${limit}`);
   if (!res.ok) throw new Error('Failed to fetch sent emails');
   return res.json();
 }
@@ -200,7 +243,7 @@ export async function getSentEmails(skip = 0, limit = 50): Promise<EmailsRespons
  * Get pending emails
  */
 export async function getPendingEmails(skip = 0, limit = 50): Promise<EmailsResponse> {
-  const res = await fetch(`${API_BASE}/emails/pending?skip=${skip}&limit=${limit}`);
+  const res = await authenticatedFetch(`${API_BASE}/emails/pending?skip=${skip}&limit=${limit}`);
   if (!res.ok) throw new Error('Failed to fetch pending emails');
   return res.json();
 }
@@ -225,7 +268,7 @@ export async function getJobStatus(limit = 20, jobType?: string, status?: string
   if (jobType) params.append('job_type', jobType);
   if (status) params.append('status', status);
 
-  const res = await fetch(`${API_BASE}/jobs/status?${params}`);
+  const res = await authenticatedFetch(`${API_BASE}/jobs/status?${params}`);
   if (!res.ok) throw new Error('Failed to fetch job status');
   return res.json();
 }
@@ -249,7 +292,7 @@ export async function scrapeUrl(url: string, skipQualityCheck = false): Promise<
   const params = new URLSearchParams({ url });
   if (skipQualityCheck) params.append('skip_quality_check', 'true');
 
-  const res = await fetch(`${API_BASE}/scrape-url?${params}`, {
+  const res = await authenticatedFetch(`${API_BASE}/scrape-url?${params}`, {
     method: 'POST',
   });
   if (!res.ok) {
@@ -271,7 +314,7 @@ export async function getActivity(
   if (activityType) params.append('activity_type', activityType);
   if (status) params.append('status', status);
 
-  const res = await fetch(`${API_BASE}/activity?${params}`);
+  const res = await authenticatedFetch(`${API_BASE}/activity?${params}`);
   if (!res.ok) throw new Error('Failed to fetch activity');
   return res.json();
 }
@@ -294,7 +337,7 @@ export async function getDiscoveredWebsites(
   if (source) params.append('source', source);
   if (category) params.append('category', category);
 
-  const res = await fetch(`${API_BASE}/discovered?${params}`);
+  const res = await authenticatedFetch(`${API_BASE}/discovered?${params}`);
   if (!res.ok) throw new Error('Failed to fetch discovered websites');
   return res.json();
 }
@@ -303,7 +346,7 @@ export async function getDiscoveredWebsites(
  * Get websites
  */
 export async function getWebsites(): Promise<Website[]> {
-  const res = await fetch(`${API_BASE}/websites`);
+  const res = await authenticatedFetch(`${API_BASE}/websites`);
   if (!res.ok) throw new Error('Failed to fetch websites');
   return res.json();
 }
@@ -312,7 +355,7 @@ export async function getWebsites(): Promise<Website[]> {
  * Extract contacts for a website
  */
 export async function extractContactsForWebsite(websiteId: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/websites/${websiteId}/extract-contacts`, {
+  const res = await authenticatedFetch(`${API_BASE}/websites/${websiteId}/extract-contacts`, {
     method: 'POST',
   });
   if (!res.ok) throw new Error('Failed to extract contacts');

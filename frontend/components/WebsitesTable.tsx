@@ -297,12 +297,12 @@ export default function WebsitesTable() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-olive-100 text-olive-800">
                         {item.category || 'unknown'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
                         {item.source}
                       </span>
                     </td>
@@ -348,7 +348,7 @@ export default function WebsitesTable() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-olive-100 text-olive-800">
                         {website.category || 'unknown'}
                       </span>
                     </td>

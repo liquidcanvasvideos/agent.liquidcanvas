@@ -24,8 +24,14 @@ export default function AutomationControl() {
 
   const loadStatus = async () => {
     try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+      if (!token) return
+      
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1'}/automation/status`
+        `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1'}/automation/status`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
       )
       if (response.ok) {
         const data = await response.json()
@@ -41,11 +47,17 @@ export default function AutomationControl() {
   const toggleAutomation = async (enabled: boolean) => {
     setUpdating(true)
     try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+      if (!token) return
+      
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1'}/automation/toggle`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify({ enabled })
         }
       )
@@ -65,11 +77,17 @@ export default function AutomationControl() {
   const setEmailMode = async (mode: 'automatic' | 'manual') => {
     setUpdating(true)
     try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+      if (!token) return
+      
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1'}/automation/email-trigger-mode`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify({ mode })
         }
       )

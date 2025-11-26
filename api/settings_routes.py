@@ -9,6 +9,7 @@ from db.database import get_db
 from utils.app_settings import AppSettingsManager
 from db.models import EmailTemplate
 from jobs.scheduler import scheduler
+from utils.auth import get_current_user
 
 router = APIRouter()
 
@@ -61,7 +62,10 @@ class EmailTemplateRequest(BaseModel):
 
 
 @router.get("/automation/status", response_model=AutomationStatusResponse)
-async def get_automation_status(db: Session = Depends(get_db)):
+async def get_automation_status(
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """Get current automation status and settings"""
     settings_manager = AppSettingsManager(db)
     
@@ -106,7 +110,8 @@ async def get_automation_status(db: Session = Depends(get_db)):
 @router.post("/automation/toggle")
 async def toggle_automation(
     request: AutomationToggleRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Turn automation on or off"""
     from jobs.scheduler import scheduler
@@ -132,7 +137,8 @@ async def toggle_automation(
 @router.post("/automation/email-trigger-mode")
 async def set_email_trigger_mode(
     request: EmailTriggerModeRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Set email trigger mode (automatic or manual)"""
     if request.mode not in ["automatic", "manual"]:
@@ -153,7 +159,8 @@ async def set_email_trigger_mode(
 @router.post("/automation/search-interval")
 async def set_search_interval(
     request: SearchIntervalRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Set search interval in seconds (minimum 10 seconds)"""
     if request.interval_seconds < 10:
@@ -220,7 +227,8 @@ async def get_email_templates(
 @router.post("/templates", response_model=EmailTemplateResponse)
 async def create_email_template(
     template: EmailTemplateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Create a new email template"""
     # If this is set as default, unset other defaults for the same category
@@ -264,7 +272,8 @@ async def create_email_template(
 async def update_email_template(
     template_id: int,
     template: EmailTemplateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Update an existing email template"""
     existing = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()
@@ -309,7 +318,8 @@ async def update_email_template(
 @router.delete("/templates/{template_id}")
 async def delete_email_template(
     template_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """Delete an email template"""
     template = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()

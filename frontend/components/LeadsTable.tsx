@@ -161,7 +161,7 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-olive-100 text-olive-800">
                       {lead.website_category?.replace('_', ' ') || 'unknown'}
                     </span>
                   </td>

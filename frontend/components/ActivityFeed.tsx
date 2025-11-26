@@ -88,7 +88,7 @@ export default function ActivityFeed({ limit = 50, autoRefresh = true }: Activit
       case 'warning':
         return 'bg-yellow-50 border-yellow-200'
       default:
-        return 'bg-blue-50 border-blue-200'
+        return 'bg-olive-50 border-olive-200'
     }
   }
 

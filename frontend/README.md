@@ -39,7 +39,14 @@ TypeScript/Next.js dashboard for the Autonomous Art Outreach Scraper.
 
 ## Environment Variables
 
-- `NEXT_PUBLIC_API_BASE_URL` - FastAPI backend URL (default: http://localhost:8000/api/v1)
+- `NEXT_PUBLIC_API_BASE_URL` - FastAPI backend URL
+  - **Production**: `https://agent.liquidcanvas.art/api/v1` (auto-detected)
+  - **Local dev**: `http://localhost:8000/api/v1` (default)
+  
+  Create `frontend/.env.local` with:
+  ```env
+  NEXT_PUBLIC_API_BASE_URL=https://agent.liquidcanvas.art/api/v1
+  ```
 
 ## Project Structure
 

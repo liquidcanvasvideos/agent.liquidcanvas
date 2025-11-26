@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import StatsCards from '@/components/StatsCards'
 import LeadsTable from '@/components/LeadsTable'
 import EmailsTable from '@/components/EmailsTable'
@@ -35,6 +36,7 @@ interface AutomationStatus {
 }
 
 export default function Dashboard() {
+  const router = useRouter()
   const [stats, setStats] = useState<Stats | null>(null)
   const [jobs, setJobs] = useState<LatestJobs | null>(null)
   const [automationStatus, setAutomationStatus] = useState<AutomationStatus | null>(null)
@@ -45,11 +47,18 @@ export default function Dashboard() {
   >('overview')
 
   useEffect(() => {
+    // Check if user is authenticated
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+    if (!token) {
+      router.push('/login')
+      return
+    }
+
     loadData()
     // Refresh every 5 seconds for real-time updates
     const interval = setInterval(loadData, 5000)
     return () => clearInterval(interval)
-  }, [])
+  }, [router])
 
   const loadData = async () => {
     try {
@@ -171,6 +180,16 @@ export default function Dashboard() {
                   <span className="text-sm font-medium text-green-800">Active</span>
                 </div>
               )}
+              <button
+                onClick={() => {
+                  localStorage.removeItem('auth_token')
+                  router.push('/login')
+                }}
+                className="flex items-center space-x-2 px-4 py-2 bg-olive-600 hover:bg-olive-700 text-white rounded-lg transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Logout</span>
+              </button>
             </div>
           </div>
         </div>

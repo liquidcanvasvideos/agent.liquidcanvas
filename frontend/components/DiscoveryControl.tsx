@@ -115,7 +115,7 @@ export default function DiscoveryControl() {
     <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200/50 p-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
-          <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg">
+          <div className="p-2 bg-olive-600 rounded-lg">
             <Search className="w-5 h-5 text-white" />
           </div>
           <h2 className="text-xl font-bold text-gray-900">Website Discovery</h2>
@@ -141,7 +141,7 @@ export default function DiscoveryControl() {
           <div className="flex items-center space-x-3">
             {status?.status === 'running' ? (
               <>
-                <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                <Loader2 className="w-5 h-5 text-olive-600 animate-spin" />
                 <div>
                   <p className="font-medium text-gray-900">Searching Internet...</p>
                   <p className="text-sm text-gray-600">
@@ -213,11 +213,11 @@ export default function DiscoveryControl() {
 
           {/* Automation Info */}
           {isAutomationOn && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800">
+            <div className="bg-olive-50 border border-olive-200 rounded-lg p-3">
+              <p className="text-sm text-olive-800">
                 <strong>Automatic Mode:</strong> Searching every {automationStatus?.search_interval_seconds || 'N/A'} seconds
               </p>
-              <p className="text-xs text-blue-600 mt-1">
+              <p className="text-xs text-olive-600 mt-1">
                 The system will automatically discover and scrape websites at the configured interval.
                 No manual action needed.
               </p>
@@ -230,7 +230,7 @@ export default function DiscoveryControl() {
               <button
                 onClick={triggerSearch}
                 disabled={searching || status?.status === 'running'}
-                className="w-full px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg flex items-center justify-center space-x-2"
+                className="w-full px-4 py-3 bg-olive-600 text-white rounded-lg font-medium hover:bg-olive-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg flex items-center justify-center space-x-2"
               >
                 {searching || status?.status === 'running' ? (
                   <>

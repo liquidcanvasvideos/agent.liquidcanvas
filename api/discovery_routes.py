@@ -7,6 +7,7 @@ from typing import Dict
 from db.database import get_db
 from jobs.automation_jobs import fetch_new_art_websites
 from jobs.website_discovery import WebsiteDiscovery
+from utils.auth import get_current_user
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,8 @@ router = APIRouter()
 @router.post("/discovery/search-now")
 async def trigger_website_discovery(
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """
     Manually trigger website discovery and scraping
@@ -50,7 +52,8 @@ async def trigger_website_discovery(
 @router.get("/discovery/test-search")
 async def test_search(
     query: str = "art gallery",
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
 ):
     """
     Test search functionality without scraping
@@ -82,7 +85,10 @@ async def test_search(
 
 
 @router.get("/discovery/status")
-async def get_discovery_status(db: Session = Depends(get_db)):
+async def get_discovery_status(
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
     """
     Get status of website discovery
     """

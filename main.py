@@ -69,6 +69,10 @@ app.include_router(debug_router, prefix="/api/v1/debug", tags=["debug"])
 from api.diagnostic_routes import router as diagnostic_router
 app.include_router(diagnostic_router, prefix="/api/v1", tags=["diagnostic"])
 
+# Include auth routes
+from api.auth_routes import router as auth_router
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
+
 
 @app.get("/")
 async def root():

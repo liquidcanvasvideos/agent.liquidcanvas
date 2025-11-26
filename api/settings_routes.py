@@ -333,7 +333,9 @@ async def delete_email_template(
 
 
 @router.get("/templates/variables")
-async def get_template_variables():
+async def get_template_variables(
+    current_user: str = Depends(get_current_user)
+):
     """Get available template variables"""
     return {
         "variables": {

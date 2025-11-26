@@ -50,13 +50,7 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
-      // Use a longer timeout and better error handling
-      const timeout = 15000 // 15 seconds
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout - backend may not be running')), timeout)
-      )
-      
-      const apiCalls = Promise.all([
+      const [statsData, jobsData, automationData] = await Promise.all([
         getStats().catch(err => {
           console.warn('Failed to get stats:', err.message)
           return null
@@ -65,16 +59,9 @@ export default function Dashboard() {
           console.warn('Failed to get jobs:', err.message)
           return null
         }),
-        fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1'}/automation/status`, {
-          signal: AbortSignal.timeout(timeout)
-        })
+        fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1'}/automation/status`)
           .then(r => r.ok ? r.json() : null)
           .catch(() => null)
-      ])
-      
-      const [statsData, jobsData, automationData] = await Promise.race([
-        apiCalls,
-        timeoutPromise
       ]) as [Stats | null, LatestJobs | null, AutomationStatus | null]
       
       // Only update if we got valid data

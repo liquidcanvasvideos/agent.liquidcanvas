@@ -64,17 +64,17 @@ class BaseScraper:
                     status_code = e.response.status_code
                 
                 # Also check the error message string for 404 indicators
-                error_str = str(e).lower()
-                error_msg_lower = error_str
+                error_str = str(e)
+                error_msg_lower = error_str.lower()
                 
-                # Check for 404 in multiple ways
-                is_404_error = (
-                    status_code == 404 or 
-                    '404' in error_msg_lower or 
-                    'not found' in error_msg_lower or
-                    '404 client error' in error_msg_lower or
-                    '404 not found' in error_msg_lower
-                )
+                # Check for 404 in multiple ways - be very explicit
+                is_404_error = False
+                if status_code == 404:
+                    is_404_error = True
+                elif '404' in error_msg_lower:
+                    is_404_error = True
+                elif 'not found' in error_msg_lower:
+                    is_404_error = True
                 
                 if is_404_error:
                     is_404 = True

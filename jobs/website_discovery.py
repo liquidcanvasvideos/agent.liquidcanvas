@@ -224,7 +224,7 @@ class WebsiteDiscovery:
             dataforseo_client = DataForSEOClient()
             if dataforseo_client.is_configured():
                 use_dataforseo = True
-                logger.info("✅ Using DataForSEO API for website discovery (high-quality SERP results)")
+                logger.info("✅ DataForSEO API configured - Using REAL-TIME Google SERP API for website discovery")
             else:
                 logger.info("ℹ️ DataForSEO not configured, using DuckDuckGo (free alternative)")
                 dataforseo_client = None  # Don't use it if not configured
@@ -254,12 +254,18 @@ class WebsiteDiscovery:
         for query, category in queries_to_search:
             try:
                 if use_dataforseo and dataforseo_client:
-                    # Use DataForSEO SERP API
+                    # Use DataForSEO SERP API in REAL-TIME
+                    logger.info(f"🌐 Making REAL-TIME DataForSEO API call for query: '{query}' (location: {location_code})")
                     serp_results = dataforseo_client.serp_google_organic(
                         keyword=query,
                         location_code=location_code,
                         depth=10
                     )
+                    
+                    if serp_results.get("success"):
+                        logger.info(f"✅ DataForSEO REAL-TIME API call successful: Found {serp_results.get('total', 0)} result(s) for '{query}'")
+                    else:
+                        logger.warning(f"⚠️ DataForSEO API call failed for '{query}': {serp_results.get('error', 'Unknown error')}")
                     
                     if serp_results.get("success") and serp_results.get("results"):
                         for result in serp_results["results"]:

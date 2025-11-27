@@ -96,10 +96,13 @@ class EnhancedEmailExtractor:
                 all_emails.add(email.lower())
                 sources[email.lower()] = sources.get(email.lower(), []) + ["javascript"]
         
-        # 6. Use Hunter.io API (if configured)
+        # 6. Use Hunter.io API (if configured) - REAL-TIME email finding
         if use_hunter_io and self.hunter_io_client and self.hunter_io_client.is_configured():
             domain = urlparse(base_url).netloc.replace('www.', '')
+            logger.info(f"🔍 Calling Hunter.io API in REAL-TIME for domain: {domain}")
             hunter_emails = self.extract_from_hunter_io(domain)
+            if hunter_emails:
+                logger.info(f"✅ Hunter.io API returned {len(hunter_emails)} email(s) for {domain}")
             for email in hunter_emails:
                 all_emails.add(email.lower())
                 sources[email.lower()] = sources.get(email.lower(), []) + ["hunter_io"]

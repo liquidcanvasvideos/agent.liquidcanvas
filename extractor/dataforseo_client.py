@@ -78,8 +78,10 @@ class DataForSEOClient:
                 "os": "windows"
             }]
             
+            logger.info(f"🌐 Making REAL-TIME DataForSEO API request: {keyword} (location: {location_code})")
             response = requests.post(url, json=payload, headers=self.headers, timeout=30)
             response.raise_for_status()
+            logger.debug(f"✅ DataForSEO API response received: {response.status_code}")
             
             data = response.json()
             

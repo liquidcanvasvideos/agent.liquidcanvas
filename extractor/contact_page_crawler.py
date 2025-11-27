@@ -143,7 +143,8 @@ class ContactPageCrawler(BaseScraper):
         
         for page_url in contact_pages:
             try:
-                soup, raw_html = self.fetch_page(page_url, use_rate_limit=True)
+                # Use silent_404=True since we already verified the page exists
+                soup, raw_html = self.fetch_page(page_url, use_rate_limit=True, silent_404=True)
                 if soup and raw_html:
                     results.append((page_url, raw_html))
             except Exception as e:

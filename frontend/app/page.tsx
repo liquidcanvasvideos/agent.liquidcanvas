@@ -13,6 +13,7 @@ import EmailTemplateEditor from '@/components/EmailTemplateEditor'
 import DiscoveryControl from '@/components/DiscoveryControl'
 import WebsitesTable from '@/components/WebsitesTable'
 import SystemStatus from '@/components/SystemStatus'
+import SearchFrequencyControl from '@/components/SearchFrequencyControl'
 import { getStats, getLatestJobs } from '@/lib/api'
 import type { Stats, LatestJobs } from '@/lib/api'
 import { 
@@ -235,10 +236,10 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-3">
-        <div className="bg-white/60 backdrop-blur-sm rounded-lg shadow-sm border border-gray-200/50 p-1.5">
-          <nav className="flex space-x-1">
+      {/* Navigation Tabs - Modern Design */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+        <div className="bg-white/80 backdrop-blur-md rounded-xl shadow-md border-2 border-gray-200/60 p-2">
+          <nav className="flex space-x-2 overflow-x-auto">
             {tabs.map((tab) => {
               const Icon = tab.icon
               return (
@@ -249,15 +250,15 @@ export default function Dashboard() {
                     setActiveTab(tab.id as any)
                   }}
                   className={`
-                    flex items-center space-x-1.5 px-3 py-1.5 rounded-md font-medium text-xs transition-all
+                    flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all whitespace-nowrap
                     ${
                       activeTab === tab.id
-                        ? 'bg-olive-600 text-white shadow-sm'
-                        : 'text-gray-700 hover:bg-gray-100/80'
+                        ? 'bg-gradient-to-r from-olive-600 to-olive-700 text-white shadow-lg transform scale-105'
+                        : 'text-gray-700 hover:bg-olive-50 hover:text-olive-700'
                     }
                   `}
                 >
-                  <Icon className="w-3.5 h-3.5" />
+                  <Icon className="w-4 h-4" />
                   <span>{tab.label}</span>
                 </button>
               )
@@ -271,30 +272,19 @@ export default function Dashboard() {
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {stats ? <StatsCards stats={stats} /> : (
-              <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200/50 p-6">
+              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border-2 border-gray-200/60 p-6">
                 <p className="text-gray-500">Stats unavailable. Check backend connection.</p>
               </div>
             )}
             <AutomationControl />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <DiscoveryControl />
-              <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200/50 p-4">
-                <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center">
-                  <Search className="w-4 h-4 mr-2" />
-                  Search Frequency
-                </h3>
-                <p className="text-xs text-gray-600 mb-3">
-                  Configure how often automatic searches run
-                </p>
-                <p className="text-xs text-gray-500">
-                  This setting is managed in the Automation Settings above.
-                </p>
-              </div>
+              <SearchFrequencyControl automationStatus={automationStatus} />
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <ScrapeForm onScrape={refreshData} />
               {jobs ? <JobStatusPanel jobs={jobs} /> : (
-                <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200/50 p-6">
+                <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border-2 border-gray-200/60 p-6">
                   <p className="text-gray-500">Job status unavailable.</p>
                 </div>
               )}

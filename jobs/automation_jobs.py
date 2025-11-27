@@ -74,11 +74,13 @@ def fetch_new_art_websites() -> Dict:
         search_location = settings_manager.get("search_location", None)
         search_categories = settings_manager.get("search_categories", None)
         
+        logger.info(f"Starting discovery with location: {search_location}, categories: {search_categories}")
+        
         # Pass db session to save discovered websites
         # This will now return ONLY new URLs that don't exist in the database
         discoveries = discovery.discover_art_websites(
             db_session=db,
-            location=search_location,
+            location=search_location,  # Can be comma-separated string
             categories=search_categories.split(",") if search_categories else None
         )
         urls = [d['url'] for d in discoveries]

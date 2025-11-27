@@ -70,12 +70,19 @@ async def trigger_website_discovery(
         
         # Save location and categories to settings for the job
         if location:
+            # Location can be comma-separated, save as-is
             settings_manager.set("search_location", location)
+            logger.info(f"Saved search location: {location}")
         if categories:
             settings_manager.set("search_categories", categories)
+            logger.info(f"Saved search categories: {categories}")
+        
+        db.commit()  # Ensure settings are saved before job runs
         
         # Run in background
         background_tasks.add_task(fetch_new_art_websites)
+        
+        logger.info(f"Started discovery job with location={location}, categories={categories}")
         
         return {
             "message": "Website discovery started in background",

@@ -29,6 +29,8 @@ export default function AutomationControl() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([])
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [automaticScraperEnabled, setAutomaticScraperEnabled] = useState<boolean>(false)
+  const [isSavingLocations, setIsSavingLocations] = useState(false)
+  const [lastLocationUpdate, setLastLocationUpdate] = useState<number>(0)
 
   useEffect(() => {
     loadStatus()
@@ -42,23 +44,42 @@ export default function AutomationControl() {
   useEffect(() => {
     if (status?.settings) {
       setAutomaticScraperEnabled(status.settings.automatic_scraper_enabled || false)
-      if (status.settings.search_location) {
-        const locations = typeof status.settings.search_location === 'string'
-          ? status.settings.search_location.split(',')
-          : status.settings.search_location
-        setSelectedLocations(Array.isArray(locations) ? locations : [locations])
-      } else {
-        setSelectedLocations([])
+      
+      // Only update locations from status if:
+      // 1. We're not currently saving locations
+      // 2. It's been more than 2 seconds since the last user update
+      // 3. The status actually has locations (not empty)
+      const now = Date.now()
+      const timeSinceLastUpdate = now - lastLocationUpdate
+      
+      if (!isSavingLocations && timeSinceLastUpdate > 2000) {
+        if (status.settings.search_location) {
+          const locations = typeof status.settings.search_location === 'string'
+            ? status.settings.search_location.split(',').filter(l => l.trim())
+            : status.settings.search_location
+          const newLocations = Array.isArray(locations) ? locations : [locations]
+          
+          // Only update if different from current selection
+          const currentStr = selectedLocations.sort().join(',')
+          const newStr = newLocations.sort().join(',')
+          if (currentStr !== newStr) {
+            setSelectedLocations(newLocations)
+          }
+        } else if (selectedLocations.length > 0 && timeSinceLastUpdate > 5000) {
+          // Only clear if it's been a while and status says empty
+          setSelectedLocations([])
+        }
       }
+      
       if (status.settings.search_categories) {
         setSelectedCategories(
           typeof status.settings.search_categories === 'string'
-            ? status.settings.search_categories.split(',')
+            ? status.settings.search_categories.split(',').filter(c => c.trim())
             : status.settings.search_categories
         )
       }
     }
-  }, [status])
+  }, [status, isSavingLocations, lastLocationUpdate])
 
   const loadLocations = async () => {
     try {
@@ -192,12 +213,16 @@ export default function AutomationControl() {
     }
   }
 
-  const saveLocations = async () => {
-    if (selectedLocations.length === 0) return
+  const saveLocations = async (locationsToSave: string[]) => {
+    setIsSavingLocations(true)
+    setLastLocationUpdate(Date.now())
     
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
-      if (!token) return
+      if (!token) {
+        setIsSavingLocations(false)
+        return
+      }
       
       // Save locations via settings API
       const response = await fetch(
@@ -208,14 +233,25 @@ export default function AutomationControl() {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ locations: selectedLocations })
+          body: JSON.stringify({ locations: locationsToSave })
         }
       )
-      if (!response.ok) {
+      if (response.ok) {
+        // Reload status to get updated settings from backend
+        await loadStatus()
+      } else {
         console.error('Failed to save locations')
+        // Revert on error
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Error details:', errorData)
       }
     } catch (error) {
       console.error('Error saving locations:', error)
+    } finally {
+      // Wait a bit before allowing status updates to overwrite
+      setTimeout(() => {
+        setIsSavingLocations(false)
+      }, 1500)
     }
   }
 
@@ -310,7 +346,7 @@ export default function AutomationControl() {
       {/* Grid Layout */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Master Switch */}
-        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+        <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl p-5 border-2 border-gray-200 shadow-md hover:shadow-lg transition-all">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
               <Power className="w-5 h-5 text-gray-600" />
@@ -333,7 +369,7 @@ export default function AutomationControl() {
         </div>
 
         {/* Automatic Scraper Switch */}
-        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+        <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl p-5 border-2 border-gray-200 shadow-md hover:shadow-lg transition-all">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
               <Zap className="w-5 h-5 text-gray-600" />
@@ -365,7 +401,7 @@ export default function AutomationControl() {
         </div>
 
         {/* Location Selection - Multiple */}
-        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+        <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl p-5 border-2 border-gray-200 shadow-md hover:shadow-lg transition-all">
           <div className="flex items-center space-x-2 mb-2">
             <MapPin className="w-5 h-5 text-gray-600" />
             <h3 className="text-sm font-semibold text-gray-900">Search Locations</h3>
@@ -376,18 +412,22 @@ export default function AutomationControl() {
                 <input
                   type="checkbox"
                   checked={selectedLocations.includes(loc.value)}
-                  onChange={(e) => {
+                  onChange={async (e) => {
+                    let newLocations: string[]
                     if (e.target.checked) {
-                      const newLocations = [...selectedLocations, loc.value]
-                      setSelectedLocations(newLocations)
-                      setTimeout(() => saveLocations(), 500)
+                      newLocations = [...selectedLocations, loc.value]
                     } else {
-                      const newLocations = selectedLocations.filter(l => l !== loc.value)
-                      setSelectedLocations(newLocations)
-                      setTimeout(() => saveLocations(), 500)
+                      newLocations = selectedLocations.filter(l => l !== loc.value)
                     }
+                    
+                    // Update state immediately for responsive UI
+                    setSelectedLocations(newLocations)
+                    setLastLocationUpdate(Date.now())
+                    
+                    // Save to backend (even if empty, to clear selection)
+                    await saveLocations(newLocations)
                   }}
-                  disabled={!status.automation_enabled || updating}
+                  disabled={!status.automation_enabled || updating || isSavingLocations}
                   className="rounded border-gray-300 text-olive-600 focus:ring-olive-500 disabled:opacity-50"
                 />
                 <span className="text-xs text-gray-700">{loc.label}</span>
@@ -400,7 +440,7 @@ export default function AutomationControl() {
         </div>
 
         {/* Email Sending Mode */}
-        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+        <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl p-5 border-2 border-gray-200 shadow-md hover:shadow-lg transition-all">
           <div className="flex items-center space-x-2 mb-2">
             <Mail className="w-5 h-5 text-gray-600" />
             <h3 className="text-sm font-semibold text-gray-900">Email Sending</h3>
@@ -433,57 +473,6 @@ export default function AutomationControl() {
           </div>
         </div>
 
-        {/* Search Frequency */}
-        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 md:col-span-2">
-          <div className="flex items-center space-x-2 mb-2">
-            <Search className="w-5 h-5 text-gray-600" />
-            <h3 className="text-sm font-semibold text-gray-900">Search Frequency</h3>
-          </div>
-          <div className="flex items-center space-x-4">
-            <input
-              type="number"
-              min="900"
-              step="60"
-              value={status.search_interval_seconds || 900}
-              onChange={(e) => {
-                const seconds = parseInt(e.target.value) || 900
-                if (seconds >= 900) {
-                  setSearchInterval(seconds)
-                }
-              }}
-              disabled={updating || !status.automation_enabled}
-              className="w-32 px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 text-sm disabled:bg-gray-100"
-            />
-            <span className="text-sm text-gray-700">seconds</span>
-            <div className="flex-1">
-              <div className="text-xs text-gray-500">
-                {status.search_interval_seconds < 3600
-                  ? `Every ${Math.round(status.search_interval_seconds/60)} minutes`
-                  : `Every ${Math.round(status.search_interval_seconds/3600)} hours`
-                }
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 mt-2">
-            {[900, 1800, 3600, 7200, 14400, 86400].map((seconds) => (
-              <button
-                key={seconds}
-                onClick={() => setSearchInterval(seconds)}
-                disabled={updating || !status.automation_enabled}
-                className={`px-2 py-1 text-xs rounded-md border transition-colors ${
-                  status.search_interval_seconds === seconds
-                    ? 'bg-olive-100 border-olive-500 text-olive-800'
-                    : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {seconds < 3600
-                  ? `${seconds/60}m`
-                  : `${seconds/3600}h`
-                }
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   )

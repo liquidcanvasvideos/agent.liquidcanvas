@@ -174,17 +174,29 @@ class WebsiteDiscovery:
         from utils.location_search import Location, generate_location_queries
         
         if location:
-            try:
-                location_enum = Location(location)
-                search_queries = generate_location_queries(
-                    location_enum, 
-                    categories=categories,
-                    include_social=True
-                )
-                logger.info(f"Generated {len(search_queries)} queries for location: {location}")
-            except ValueError:
-                logger.warning(f"Invalid location: {location}, using default queries")
+            # Handle comma-separated locations
+            location_list = [loc.strip() for loc in location.split(',')] if isinstance(location, str) else location
+            search_queries = []
+            
+            for loc_str in location_list:
+                try:
+                    location_enum = Location(loc_str)
+                    queries = generate_location_queries(
+                        location_enum, 
+                        categories=categories,
+                        include_social=True
+                    )
+                    search_queries.extend(queries)
+                    logger.info(f"Generated {len(queries)} queries for location: {loc_str}")
+                except ValueError:
+                    logger.warning(f"Invalid location: {loc_str}, skipping")
+                    continue
+            
+            if not search_queries:
+                logger.warning(f"No valid locations found, using default queries")
                 search_queries = self._get_default_queries()
+            else:
+                logger.info(f"Total {len(search_queries)} queries generated for locations: {', '.join(location_list)}")
         else:
             # Default queries (all locations, all categories)
             search_queries = []

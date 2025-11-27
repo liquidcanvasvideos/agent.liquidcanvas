@@ -35,7 +35,9 @@ class ContactExtractionService:
             from utils.config import settings
             if hasattr(settings, 'HUNTER_IO_API_KEY') and settings.HUNTER_IO_API_KEY:
                 hunter_client = HunterIOClient(settings.HUNTER_IO_API_KEY)
-                logger.info("Hunter.io client initialized")
+                logger.info("✅ Hunter.io client initialized and ready for email extraction")
+            else:
+                logger.warning("⚠️ Hunter.io API key not configured. Set HUNTER_IO_API_KEY in .env for enhanced email finding")
         except Exception as e:
             logger.warning(f"Could not initialize Hunter.io client: {e}")
         

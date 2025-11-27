@@ -205,9 +205,11 @@ class WebsiteDiscovery:
             dataforseo_client = DataForSEOClient()
             if dataforseo_client.is_configured():
                 use_dataforseo = True
-                logger.info("Using DataForSEO API for website discovery")
+                logger.info("✅ Using DataForSEO API for website discovery (high-quality SERP results)")
+            else:
+                logger.info("ℹ️ DataForSEO not configured, using DuckDuckGo (free alternative)")
         except Exception as e:
-            logger.warning(f"Could not initialize DataForSEO client: {e}")
+            logger.warning(f"Could not initialize DataForSEO client: {e}. Falling back to DuckDuckGo.")
         
         # Search DuckDuckGo (no API key required) or DataForSEO
         import random

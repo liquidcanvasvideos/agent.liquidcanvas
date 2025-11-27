@@ -186,7 +186,7 @@ export default function AutomationControl() {
       
       // Save locations first if enabling
       if (enabled && selectedLocations.length > 0) {
-        await saveLocations()
+        await saveLocations(selectedLocations)
       }
       
       const response = await fetch(

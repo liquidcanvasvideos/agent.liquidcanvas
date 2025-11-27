@@ -197,6 +197,7 @@ export default function WebsitesTable() {
                 className="px-2 py-1 border border-gray-300 rounded-md text-xs"
               >
                 <option value="">All Sources</option>
+                <option value="dataforseo">DataForSEO (Google SERP)</option>
                 <option value="duckduckgo">DuckDuckGo</option>
                 <option value="seed_list">Seed List</option>
                 <option value="google">Google</option>

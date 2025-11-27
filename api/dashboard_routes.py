@@ -129,6 +129,7 @@ async def get_leads(
             "website_title": title,
             "website_url": url,
             "website_category": cat,
+            "source": getattr(contact, 'source', 'html'),  # Email source (hunter_io, html, footer, etc.)
             "created_at": contact.created_at
         })
     

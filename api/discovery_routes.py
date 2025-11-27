@@ -160,14 +160,15 @@ async def get_discovery_status(
     current_user: str = Depends(get_current_user)
 ):
     """
-    Get status of website discovery
+    Get status of website discovery with search source information
     """
-    from db.models import ScrapingJob
+    from db.models import ScrapingJob, DiscoveredWebsite
+    from sqlalchemy import func, desc
     
     # Get latest discovery job
     latest_job = db.query(ScrapingJob).filter(
         ScrapingJob.job_type == "fetch_new_art_websites"
-    ).order_by(ScrapingJob.created_at.desc()).first()
+    ).order_by(desc(ScrapingJob.created_at)).first()
     
     if not latest_job:
         return {
@@ -176,13 +177,35 @@ async def get_discovery_status(
             "last_run": None
         }
     
+    # Get search source breakdown from recent discoveries (last hour)
+    recent_discoveries = db.query(
+        DiscoveredWebsite.source,
+        func.count(DiscoveredWebsite.id).label('count')
+    ).filter(
+        DiscoveredWebsite.created_at >= func.datetime('now', '-1 hour')
+    ).group_by(DiscoveredWebsite.source).all()
+    
+    source_breakdown = {source: count for source, count in recent_discoveries}
+    
+    # Get search queries used in last hour
+    recent_queries = db.query(
+        DiscoveredWebsite.search_query,
+        func.count(DiscoveredWebsite.id).label('count')
+    ).filter(
+        DiscoveredWebsite.created_at >= func.datetime('now', '-1 hour'),
+        DiscoveredWebsite.search_query.isnot(None),
+        DiscoveredWebsite.search_query != ''
+    ).group_by(DiscoveredWebsite.search_query).order_by(desc('count')).limit(10).all()
+    
     return {
         "status": latest_job.status,
         "last_run": latest_job.created_at.isoformat() if latest_job.created_at else None,
         "result": latest_job.result,
         "error": latest_job.error_message,
         "started_at": latest_job.started_at.isoformat() if latest_job.started_at else None,
-        "completed_at": latest_job.completed_at.isoformat() if latest_job.completed_at else None
+        "completed_at": latest_job.completed_at.isoformat() if latest_job.completed_at else None,
+        "search_sources": source_breakdown,
+        "recent_queries": [{"query": q, "count": c} for q, c in recent_queries]
     }
 
 

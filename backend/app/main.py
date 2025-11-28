@@ -62,10 +62,42 @@ async def health():
 
 @app.on_event("startup")
 async def startup():
-    """Startup event - create database tables and start scheduler"""
-    # In production, use Alembic migrations instead
-    # async with engine.begin() as conn:
-    #     await conn.run_sync(Base.metadata.create_all)
+    """Startup event - run migrations and start scheduler"""
+    # Run database migrations on startup (for free tier - no pre-deploy command)
+    try:
+        import asyncio
+        from alembic.config import Config
+        from alembic import command
+        
+        logger.info("Running database migrations on startup...")
+        
+        # Get the backend directory path
+        import os
+        backend_dir = os.path.dirname(os.path.dirname(__file__))
+        alembic_cfg = Config(os.path.join(backend_dir, "alembic.ini"))
+        
+        # Run migrations
+        try:
+            command.upgrade(alembic_cfg, "head")
+            logger.info("✅ Database migrations completed successfully")
+        except Exception as migration_error:
+            logger.warning(f"Migration failed (may be first run): {migration_error}")
+            # Try to create tables directly if migrations fail (first deploy)
+            try:
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                logger.info("✅ Created database tables directly (first deploy)")
+            except Exception as create_error:
+                logger.error(f"Failed to create tables: {create_error}")
+    except Exception as e:
+        logger.warning(f"Migration setup failed: {e}")
+        # Fallback: create tables directly
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("✅ Created database tables directly (fallback)")
+        except Exception as create_error:
+            logger.error(f"Failed to create tables: {create_error}")
     
     # Start scheduler for periodic tasks
     try:

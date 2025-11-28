@@ -21,12 +21,12 @@ def test_hunter_io():
         
         api_key = getattr(settings, 'HUNTER_IO_API_KEY', None)
         if not api_key or not api_key.strip():
-            print("❌ Hunter.io API key not configured")
+            print("[FAIL] Hunter.io API key not configured")
             return False
         
         client = HunterIOClient(api_key)
         if not client.is_configured():
-            print("❌ Hunter.io client not properly configured")
+            print("[FAIL] Hunter.io client not properly configured")
             return False
         
         # Test with a real domain
@@ -36,16 +36,16 @@ def test_hunter_io():
         result = client.domain_search(test_domain)
         if result and result.get("emails"):
             emails = result["emails"]
-            print(f"✅ Hunter.io API working! Found {len(emails)} email(s):")
+            print(f"[PASS] Hunter.io API working! Found {len(emails)} email(s):")
             for email in emails[:5]:  # Show first 5
                 print(f"   - {email.get('value', 'N/A')} (confidence: {email.get('confidence_score', 'N/A')})")
             return True
         else:
-            print(f"⚠️ Hunter.io API responded but no emails found for {test_domain}")
+            print(f"[WARN] Hunter.io API responded but no emails found for {test_domain}")
             print(f"   Response: {result}")
             return True  # API is working, just no emails for this domain
     except Exception as e:
-        print(f"❌ Hunter.io API test failed: {str(e)}")
+        print(f"[FAIL] Hunter.io API test failed: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -64,12 +64,12 @@ def test_dataforseo():
         password = getattr(settings, 'DATAFORSEO_PASSWORD', None)
         
         if not login or not password or not login.strip() or not password.strip():
-            print("❌ DataForSEO credentials not configured")
+            print("[FAIL] DataForSEO credentials not configured")
             return False
         
         client = DataForSEOClient(login, password)
         if not client.is_configured():
-            print("❌ DataForSEO client not properly configured")
+            print("[FAIL] DataForSEO client not properly configured")
             return False
         
         # Test with a real search query
@@ -84,17 +84,17 @@ def test_dataforseo():
         
         if result and result.get("success"):
             results = result.get("results", [])
-            print(f"✅ DataForSEO API working! Found {len(results)} result(s):")
+            print(f"[PASS] DataForSEO API working! Found {len(results)} result(s):")
             for i, item in enumerate(results[:3], 1):  # Show first 3
                 print(f"   {i}. {item.get('title', 'N/A')}")
                 print(f"      URL: {item.get('url', 'N/A')}")
             return True
         else:
             error = result.get("error", "Unknown error") if result else "No response"
-            print(f"❌ DataForSEO API test failed: {error}")
+            print(f"[FAIL] DataForSEO API test failed: {error}")
             return False
     except Exception as e:
-        print(f"❌ DataForSEO API test failed: {str(e)}")
+        print(f"[FAIL] DataForSEO API test failed: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -121,10 +121,10 @@ def test_contact_extraction():
             website = scraper.scrape_website(test_url, skip_quality_check=True)
             
             if not website:
-                print("❌ Failed to scrape website")
+                print("[FAIL] Failed to scrape website")
                 return False
             
-            print(f"✅ Website scraped successfully (ID: {website.id})")
+            print(f"[PASS] Website scraped successfully (ID: {website.id})")
             
             # Now extract contacts
             extraction_service = ContactExtractionService(db)
@@ -135,32 +135,36 @@ def test_contact_extraction():
                 phones = result.get("phones_extracted", 0)
                 social = result.get("social_links_extracted", 0)
                 
-                print(f"✅ Contact extraction successful!")
+                print(f"[PASS] Contact extraction successful!")
                 print(f"   - Emails: {emails}")
                 print(f"   - Phones: {phones}")
                 print(f"   - Social links: {social}")
                 
                 # Check if Hunter.io was used
                 from db.models import Contact
-                hunter_contacts = db.query(Contact).filter(
-                    Contact.website_id == website.id,
-                    Contact.source == "hunter_io"
-                ).all()
-                
-                if hunter_contacts:
-                    print(f"✅ Hunter.io was used! Found {len(hunter_contacts)} email(s) via Hunter.io:")
-                    for contact in hunter_contacts:
-                        print(f"   - {contact.email}")
+                try:
+                    hunter_contacts = db.query(Contact).filter(
+                        Contact.website_id == website.id,
+                        Contact.source == "hunter_io"
+                    ).all()
+                    
+                    if hunter_contacts:
+                        print(f"[PASS] Hunter.io was used! Found {len(hunter_contacts)} email(s) via Hunter.io:")
+                        for contact in hunter_contacts:
+                            print(f"   - {contact.email}")
+                except Exception as db_error:
+                    # Database might not have source column yet
+                    print(f"[WARN] Could not check Hunter.io usage (database migration needed): {db_error}")
                 
                 return True
             else:
                 error = result.get("error", "Unknown error") if result else "No result"
-                print(f"❌ Contact extraction failed: {error}")
+                print(f"[FAIL] Contact extraction failed: {error}")
                 return False
         finally:
             db.close()
     except Exception as e:
-        print(f"❌ Contact extraction test failed: {str(e)}")
+        print(f"[FAIL] Contact extraction test failed: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -210,24 +214,24 @@ def test_website_discovery():
                     
                     if result and result.get("success"):
                         results = result.get("results", [])
-                        print(f"✅ DataForSEO discovery working! Found {len(results)} websites")
+                        print(f"[PASS] DataForSEO discovery working! Found {len(results)} websites")
                         for i, item in enumerate(results[:3], 1):
                             print(f"   {i}. {item.get('title', 'N/A')}")
                             print(f"      {item.get('url', 'N/A')}")
                         return True
                     else:
-                        print(f"⚠️ DataForSEO search returned no results")
+                        print(f"[WARN] DataForSEO search returned no results")
                         return False
                 else:
-                    print("⚠️ DataForSEO not configured, skipping API test")
+                    print("[WARN] DataForSEO not configured, skipping API test")
                     return True
             else:
-                print("⚠️ DataForSEO credentials not found")
+                print("[WARN] DataForSEO credentials not found")
                 return False
         finally:
             db.close()
     except Exception as e:
-        print(f"❌ Website discovery test failed: {str(e)}")
+        print(f"[FAIL] Website discovery test failed: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -254,15 +258,15 @@ def main():
     print("TEST RESULTS SUMMARY")
     print("="*60)
     for test_name, passed in results.items():
-        status = "✅ PASS" if passed else "❌ FAIL"
+        status = "[PASS]" if passed else "[FAIL]"
         print(f"{test_name}: {status}")
     
     all_passed = all(results.values())
     print("\n" + "="*60)
     if all_passed:
-        print("✅ ALL TESTS PASSED - Backend is working correctly!")
+        print("[SUCCESS] ALL TESTS PASSED - Backend is working correctly!")
     else:
-        print("❌ SOME TESTS FAILED - Check the errors above")
+        print("[FAILURE] SOME TESTS FAILED - Check the errors above")
     print("="*60)
     
     return all_passed

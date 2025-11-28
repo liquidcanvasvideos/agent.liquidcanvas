@@ -84,6 +84,83 @@ async def test_scrape_functionality(
         }
 
 
+@router.get("/diagnostic/api-status")
+async def check_api_status(db: Session = Depends(get_db)):
+    """
+    Check status of all configured APIs (Hunter.io, DataForSEO)
+    """
+    from utils.config import settings
+    from extractor.hunter_io_client import HunterIOClient
+    from extractor.dataforseo_client import DataForSEOClient
+    
+    results = {
+        "hunter_io": {
+            "configured": False,
+            "working": False,
+            "test_result": None,
+            "error": None
+        },
+        "dataforseo": {
+            "configured": False,
+            "working": False,
+            "test_result": None,
+            "error": None
+        }
+    }
+    
+    # Test Hunter.io
+    try:
+        api_key = getattr(settings, 'HUNTER_IO_API_KEY', None)
+        if api_key and api_key.strip():
+            results["hunter_io"]["configured"] = True
+            client = HunterIOClient(api_key)
+            if client.is_configured():
+                # Quick test
+                test_result = client.domain_search("liquidcanvas.art")
+                results["hunter_io"]["working"] = True
+                results["hunter_io"]["test_result"] = {
+                    "emails_found": len(test_result.get("emails", [])) if test_result else 0,
+                    "domain": "liquidcanvas.art"
+                }
+            else:
+                results["hunter_io"]["error"] = "Client not properly initialized"
+        else:
+            results["hunter_io"]["error"] = "API key not configured"
+    except Exception as e:
+        results["hunter_io"]["error"] = str(e)
+    
+    # Test DataForSEO
+    try:
+        login = getattr(settings, 'DATAFORSEO_LOGIN', None)
+        password = getattr(settings, 'DATAFORSEO_PASSWORD', None)
+        if login and password and login.strip() and password.strip():
+            results["dataforseo"]["configured"] = True
+            client = DataForSEOClient(login, password)
+            if client.is_configured():
+                # Quick test
+                test_result = client.serp_google_organic(
+                    keyword="home decor blog",
+                    location_code=2840,
+                    depth=3
+                )
+                if test_result and test_result.get("success"):
+                    results["dataforseo"]["working"] = True
+                    results["dataforseo"]["test_result"] = {
+                        "results_found": len(test_result.get("results", [])),
+                        "query": "home decor blog"
+                    }
+                else:
+                    results["dataforseo"]["error"] = test_result.get("error", "API call failed")
+            else:
+                results["dataforseo"]["error"] = "Client not properly initialized"
+        else:
+            results["dataforseo"]["error"] = "Credentials not configured"
+    except Exception as e:
+        results["dataforseo"]["error"] = str(e)
+    
+    return results
+
+
 @router.get("/diagnostic/full-check")
 async def full_diagnostic_check(db: Session = Depends(get_db)):
     """Run full diagnostic check"""

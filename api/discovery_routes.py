@@ -177,6 +177,17 @@ async def get_discovery_status(
             "last_run": None
         }
     
+    # Check if job is stuck in "running" status for more than 30 minutes
+    from datetime import datetime, timedelta
+    if latest_job.status == "running" and latest_job.started_at:
+        time_since_start = datetime.utcnow() - latest_job.started_at
+        if time_since_start > timedelta(minutes=30):
+            logger.warning(f"Job {latest_job.id} has been running for {time_since_start}, marking as failed")
+            latest_job.status = "failed"
+            latest_job.error_message = f"Job timed out after {time_since_start}"
+            latest_job.completed_at = datetime.utcnow()
+            db.commit()
+    
     # Get search source breakdown from recent discoveries (last hour)
     recent_discoveries = db.query(
         DiscoveredWebsite.source,

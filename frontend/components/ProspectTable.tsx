@@ -38,6 +38,7 @@ export default function ProspectTable() {
     loadProspects()
     const interval = setInterval(loadProspects, 10000) // Refresh every 10 seconds
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skip, statusFilter, hasEmailFilter])
 
   const handleCompose = async (prospectId: string) => {

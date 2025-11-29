@@ -17,19 +17,11 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# CORS configuration
-cors_origins = [
-    "http://localhost:3000",
-    "http://localhost:8000",
-    "https://agent.liquidcanvas.art",
-]
-
-if os.getenv("CORS_ORIGINS"):
-    cors_origins.extend(os.getenv("CORS_ORIGINS").split(","))
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    # Allow all origins so the Vercel frontend (agent.liquidcanvas.art) can call the API
+    # If you want to restrict later, set CORS_ORIGINS env or edit this list.
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

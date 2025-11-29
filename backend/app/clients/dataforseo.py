@@ -116,19 +116,27 @@ class DataForSEOClient:
                     logger.error(f"DataForSEO task_post HTTP error: {error_msg}")
                     return {"success": False, "error": error_msg}
                 
+                # DataForSEO returns status_code 20000 for successful API call
+                # But individual tasks can have their own status_code
                 if result.get("status_code") == 20000:
                     tasks = result.get("tasks", [])
                     if not tasks or len(tasks) == 0:
                         logger.error("No tasks in DataForSEO task_post response")
+                        logger.error(f"Full response: {result}")
                         return {"success": False, "error": "No tasks returned from DataForSEO"}
                     
                     task = tasks[0]
                     task_status = task.get("status_code")
                     
                     # Check if task was created successfully
+                    # Status codes: 20000 = success, 40503 = POST Data Is Invalid
                     if task_status != 20000:
                         error_msg = task.get("status_message", f"Task creation failed with status {task_status}")
-                        logger.error(f"DataForSEO task_post failed: {error_msg}")
+                        error_code = task.get("status_code")
+                        logger.error(f"DataForSEO task_post failed with status {error_code}: {error_msg}")
+                        logger.error(f"Task response: {task}")
+                        logger.error(f"Full API response: {result}")
+                        # Return the actual error message from DataForSEO
                         return {"success": False, "error": error_msg}
                     
                     task_id = task.get("id")
@@ -142,9 +150,22 @@ class DataForSEOClient:
                     # Poll for results
                     return await self._get_serp_results(task_id)
                 else:
-                    error_msg = result.get("status_message", f"API error: {result.get('status_code')}")
-                    logger.error(f"DataForSEO API error: {error_msg}")
+                    # Top-level API error (not task-level)
+                    error_code = result.get("status_code")
+                    error_msg = result.get("status_message", f"API error: {error_code}")
+                    logger.error(f"DataForSEO API top-level error {error_code}: {error_msg}")
                     logger.error(f"Full response: {result}")
+                    
+                    # Check if there are tasks with more specific errors
+                    tasks = result.get("tasks", [])
+                    if tasks and len(tasks) > 0:
+                        task = tasks[0]
+                        task_error = task.get("status_message")
+                        task_code = task.get("status_code")
+                        if task_error:
+                            logger.error(f"Task-level error {task_code}: {task_error}")
+                            return {"success": False, "error": task_error}
+                    
                     return {"success": False, "error": error_msg}
         
         except Exception as e:

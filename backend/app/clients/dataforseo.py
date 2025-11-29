@@ -83,14 +83,14 @@ class DataForSEOClient:
         """
         url = f"{self.BASE_URL}/serp/google/organic/task_post"
         
+        # DataForSEO task_post payload - only include required/valid fields
+        # Based on API docs, device and os may not be valid fields for this endpoint
         payload = {
             "data": [{
                 "keyword": keyword,
                 "location_code": location_code,
                 "language_code": language_code,
-                "depth": depth,
-                "device": "desktop",
-                "os": "windows"
+                "depth": depth
             }]
         }
         

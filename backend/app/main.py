@@ -17,6 +17,22 @@ app = FastAPI(
     version="2.0.0"
 )
 
+
+@app.middleware("http")
+async def add_cors_headers(request, call_next):
+    """
+    Fallback middleware to guarantee CORS headers on all responses.
+    This runs in addition to CORSMiddleware, but ensures that even
+    unexpected 500 errors include Access-Control-Allow-* headers so
+    the frontend can read the response instead of seeing a CORS block.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("Access-Control-Allow-Origin", "*")
+    response.headers.setdefault("Access-Control-Allow-Methods", "*")
+    response.headers.setdefault("Access-Control-Allow-Headers", "*")
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     # Use wildcard origins with credentials disabled so Render always

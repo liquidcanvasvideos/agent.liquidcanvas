@@ -1,5 +1,5 @@
 'use client'
-// Version: 3.0 - Discovery feature removed
+// Version: 3.1 - Discovery feature removed - FORCE REDEPLOY
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'

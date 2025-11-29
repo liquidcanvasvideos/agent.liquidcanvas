@@ -83,16 +83,27 @@ class DataForSEOClient:
         """
         url = f"{self.BASE_URL}/serp/google/organic/task_post"
         
-        # DataForSEO task_post payload - only include required/valid fields
-        # Based on API docs, device and os may not be valid fields for this endpoint
+        # DataForSEO task_post payload format
+        # According to DataForSEO API v3 docs, the payload must be wrapped in "data" array
+        # Required fields: keyword, location_code, language_code
+        # Optional fields: depth (defaults to 10 if not specified)
         payload = {
             "data": [{
-                "keyword": keyword,
-                "location_code": location_code,
-                "language_code": language_code,
-                "depth": depth
+                "keyword": str(keyword).strip(),  # Ensure it's a string and trimmed
+                "location_code": int(location_code),  # Ensure it's an integer
+                "language_code": str(language_code).strip().lower(),  # Ensure lowercase string
+                "depth": int(depth) if depth else 10  # Ensure integer, default to 10
             }]
         }
+        
+        # Validate payload before sending
+        if not payload["data"][0]["keyword"]:
+            logger.error("Empty keyword provided to DataForSEO")
+            return {"success": False, "error": "Keyword cannot be empty"}
+        
+        if payload["data"][0]["location_code"] <= 0:
+            logger.error(f"Invalid location_code: {location_code}")
+            return {"success": False, "error": f"Invalid location_code: {location_code}"}
         
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:

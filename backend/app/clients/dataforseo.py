@@ -211,15 +211,16 @@ class DataForSEOClient:
             
             async with httpx.AsyncClient(timeout=60.0) as client:
                 # CRITICAL: DataForSEO requires exact JSON format
-                # Send as properly serialized JSON string to ensure exact format
-                json_str = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
-                logger.debug(f"Serialized JSON: {json_str}")
+                # Use httpx's json parameter - it handles serialization correctly
+                # and sets Content-Type automatically
+                logger.debug(f"Payload dict: {payload}")
+                logger.debug(f"Payload JSON: {json.dumps(payload, indent=2)}")
                 
-                # Send with explicit content type
+                # Send using json parameter (httpx handles encoding and Content-Type)
                 response = await client.post(
                     url,
                     headers=self.headers,
-                    content=json_str.encode('utf-8')
+                    json=payload  # httpx will serialize this correctly
                 )
                 
                 # Parse response

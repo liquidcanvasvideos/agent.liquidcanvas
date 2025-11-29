@@ -47,9 +47,22 @@ export default function DiscoveryControl() {
   }
 
   const handleDiscover = async () => {
+    // Debug: log current state
+    console.log('Discovery attempt:', {
+      keywords: keywords.trim(),
+      keywordsLength: keywords.trim().length,
+      selectedCategories: selectedCategories,
+      categoriesLength: selectedCategories.length,
+      selectedLocations: selectedLocations,
+      locationsLength: selectedLocations.length
+    })
+
     // Require at least one signal to search: keywords or categories
-    if (!keywords.trim() && selectedCategories.length === 0) {
-      alert('Please enter keywords or select at least one category')
+    const hasKeywords = keywords.trim().length > 0
+    const hasCategories = selectedCategories.length > 0
+    
+    if (!hasKeywords && !hasCategories) {
+      alert('Please enter keywords OR select at least one category (or both)')
       return
     }
 
@@ -61,10 +74,20 @@ export default function DiscoveryControl() {
     setLoading(true)
     try {
       // Pass locations and categories arrays to the API
-      await createDiscoveryJob(keywords, selectedLocations, 100, selectedCategories)
+      // Send empty string if no keywords (backend expects string, not null)
+      await createDiscoveryJob(
+        hasKeywords ? keywords.trim() : '', 
+        selectedLocations, 
+        100, 
+        hasCategories ? selectedCategories : []
+      )
       setIsRunning(true)
+      // Clear form after successful start
+      setKeywords('')
+      setSelectedCategories([])
     } catch (error: any) {
-      alert(`Failed to start discovery: ${error.message}`)
+      console.error('Discovery error:', error)
+      alert(`Failed to start discovery: ${error.message || 'Unknown error'}`)
     } finally {
       setLoading(false)
     }

@@ -47,26 +47,30 @@ export default function DiscoveryControl() {
   }
 
   const handleDiscover = async () => {
-    // Debug: log current state
-    console.log('Discovery attempt:', {
+    // Debug: log current state - use console.error so it always shows
+    const debugInfo = {
       keywords: keywords.trim(),
       keywordsLength: keywords.trim().length,
       selectedCategories: selectedCategories,
       categoriesLength: selectedCategories.length,
       selectedLocations: selectedLocations,
       locationsLength: selectedLocations.length
-    })
+    }
+    console.error('🔍 DISCOVERY DEBUG:', debugInfo)
+    console.log('🔍 DISCOVERY DEBUG:', debugInfo)
 
     // Require at least one signal to search: keywords or categories
     const hasKeywords = keywords.trim().length > 0
     const hasCategories = selectedCategories.length > 0
     
     if (!hasKeywords && !hasCategories) {
-      alert('Please enter keywords OR select at least one category (or both)')
+      console.error('❌ VALIDATION FAILED: No keywords and no categories selected')
+      alert(`Please enter keywords OR select at least one category.\n\nCurrent state:\n- Keywords: "${keywords.trim()}"\n- Categories selected: ${selectedCategories.length}\n- Categories: ${selectedCategories.join(', ') || 'none'}`)
       return
     }
 
     if (selectedLocations.length === 0) {
+      console.error('❌ VALIDATION FAILED: No locations selected')
       alert('Please select at least one location')
       return
     }
@@ -169,6 +173,17 @@ export default function DiscoveryControl() {
                 <span>{cat.label}</span>
               </label>
             ))}
+          </div>
+        </div>
+
+        {/* Debug panel - shows current state */}
+        <div className="bg-gray-50 border border-gray-200 rounded p-3 text-xs text-gray-600">
+          <div className="font-semibold mb-1">Debug Info:</div>
+          <div>Keywords: "{keywords.trim()}" ({keywords.trim().length} chars)</div>
+          <div>Categories: {selectedCategories.length} selected - {selectedCategories.join(', ') || 'none'}</div>
+          <div>Locations: {selectedLocations.length} selected - {selectedLocations.join(', ')}</div>
+          <div className="mt-1">
+            Can start: {((keywords.trim().length > 0 || selectedCategories.length > 0) && selectedLocations.length > 0) ? '✅ YES' : '❌ NO'}
           </div>
         </div>
 

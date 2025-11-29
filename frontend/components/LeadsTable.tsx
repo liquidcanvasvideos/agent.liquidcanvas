@@ -238,7 +238,7 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
       {activeProspect && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-height-[80vh] max-h-[80vh] overflow-hidden flex flex-col">
-            <div className "flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">
                   Review &amp; Send Email

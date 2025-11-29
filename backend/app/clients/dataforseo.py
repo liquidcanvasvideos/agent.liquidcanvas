@@ -149,10 +149,10 @@ class DataForSEOClient:
         Returns:
             Dictionary with parsed results
         """
-        # DataForSEO requires POST request with array of task objects in body
-        # The API expects: [{"id": "task_id"}]
+        # DataForSEO task_get endpoint - must match task_post format with "data" wrapper
+        # Format: {"data": [{"id": "task_id"}]} - matches task_post structure
         url = f"{self.BASE_URL}/serp/google/organic/task_get/advanced"
-        payload = [{"id": task_id}]
+        payload = {"data": [{"id": task_id}]}
         
         logger.info(f"Polling DataForSEO task: {task_id}")
         logger.debug(f"Polling URL: {url}")

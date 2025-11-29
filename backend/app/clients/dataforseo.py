@@ -97,11 +97,24 @@ class DataForSEOClient:
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 logger.info(f"Making DataForSEO SERP API call for keyword: '{keyword}'")
+                logger.debug(f"DataForSEO task_post URL: {url}")
+                logger.debug(f"DataForSEO task_post payload: {payload}")
                 response = await client.post(url, headers=self.headers, json=payload)
-                response.raise_for_status()
-                result = response.json()
+                
+                # Always parse JSON first, even on HTTP errors
+                try:
+                    result = response.json()
+                except:
+                    result = {"status_code": response.status_code, "status_message": response.text}
                 
                 logger.debug(f"DataForSEO task_post response: status_code={result.get('status_code')}, tasks_count={result.get('tasks_count', 0)}")
+                logger.debug(f"Full response: {result}")
+                
+                # Check for HTTP errors
+                if response.status_code != 200:
+                    error_msg = result.get("status_message", f"HTTP {response.status_code}: {response.text}")
+                    logger.error(f"DataForSEO task_post HTTP error: {error_msg}")
+                    return {"success": False, "error": error_msg}
                 
                 if result.get("status_code") == 20000:
                     tasks = result.get("tasks", [])

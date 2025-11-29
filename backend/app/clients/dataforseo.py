@@ -1,11 +1,14 @@
 """
 DataForSEO API client for website discovery and on-page crawling
+Fully validated and diagnostic-enabled implementation
 """
 import httpx
 import base64
 import asyncio
 import json
 from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, asdict
+from datetime import datetime
 import os
 from dotenv import load_dotenv
 import logging
@@ -15,8 +18,43 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class DataForSEOPayload:
+    """Validated DataForSEO task payload structure"""
+    keyword: str
+    location_code: int
+    language_code: str = "en"
+    depth: int = 10
+    
+    def __post_init__(self):
+        """Validate payload fields"""
+        if not self.keyword or not self.keyword.strip():
+            raise ValueError("keyword cannot be empty")
+        if self.location_code <= 0:
+            raise ValueError(f"location_code must be positive, got {self.location_code}")
+        if not self.language_code or len(self.language_code) != 2:
+            raise ValueError(f"language_code must be 2 characters, got '{self.language_code}'")
+        if self.depth < 1 or self.depth > 100:
+            raise ValueError(f"depth must be between 1 and 100, got {self.depth}")
+        
+        # Normalize
+        self.keyword = str(self.keyword).strip()
+        self.language_code = str(self.language_code).strip().lower()
+        self.location_code = int(self.location_code)
+        self.depth = int(self.depth)
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            "keyword": self.keyword,
+            "location_code": self.location_code,
+            "language_code": self.language_code,
+            "depth": self.depth
+        }
+
+
 class DataForSEOClient:
-    """Client for DataForSEO API"""
+    """Client for DataForSEO API with full validation and diagnostics"""
     
     BASE_URL = "https://api.dataforseo.com/v3"
     
@@ -34,6 +72,10 @@ class DataForSEOClient:
         if not self.login or not self.password:
             raise ValueError("DataForSEO credentials not configured. Set DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD")
         
+        # Validate credentials format
+        if not self.login.strip() or not self.password.strip():
+            raise ValueError("DataForSEO credentials cannot be empty")
+        
         # Create basic auth header
         credentials = f"{self.login}:{self.password}"
         encoded_credentials = base64.b64encode(credentials.encode()).decode()
@@ -42,6 +84,14 @@ class DataForSEOClient:
             "Content-Type": "application/json",
             "Authorization": f"Basic {encoded_credentials}"
         }
+        
+        # Diagnostics tracking
+        self._request_count = 0
+        self._success_count = 0
+        self._error_count = 0
+        self._last_request = None
+        self._last_response = None
+        self._last_error = None
     
     def get_location_code(self, location: str) -> int:
         """
@@ -63,6 +113,54 @@ class DataForSEOClient:
         }
         return location_map.get(location.lower(), 2840)  # Default to USA
     
+    def _build_payload(self, payload_obj: DataForSEOPayload) -> dict:
+        """
+        Build DataForSEO API payload according to v3 specification
+        
+        According to DataForSEO v3 API docs:
+        - Payload must be wrapped in "data" key
+        - "data" must be an array of task objects
+        - Each task object contains: keyword, location_code, language_code, depth (optional)
+        - NO device, os, or other unsupported fields
+        
+        Returns:
+            Properly formatted payload dict
+        """
+        return {
+            "data": [payload_obj.to_dict()]
+        }
+    
+    def _validate_response(self, response: httpx.Response, result: dict) -> tuple[bool, Optional[str]]:
+        """
+        Validate DataForSEO API response
+        
+        Returns:
+            (is_valid, error_message)
+        """
+        # Check HTTP status
+        if response.status_code != 200:
+            return False, f"HTTP {response.status_code}: {response.text[:200]}"
+        
+        # Check top-level status
+        status_code = result.get("status_code")
+        if status_code != 20000:
+            status_msg = result.get("status_message", "Unknown error")
+            return False, f"API error {status_code}: {status_msg}"
+        
+        # Check tasks array
+        tasks = result.get("tasks", [])
+        if not tasks:
+            return False, "No tasks in response"
+        
+        # Check first task status
+        task = tasks[0]
+        task_status = task.get("status_code")
+        if task_status != 20000:
+            task_msg = task.get("status_message", "Unknown task error")
+            return False, f"Task error {task_status}: {task_msg}"
+        
+        return True, None
+    
     async def serp_google_organic(
         self,
         keyword: str,
@@ -82,128 +180,108 @@ class DataForSEOClient:
         Returns:
             Dictionary with search results
         """
-        url = f"{self.BASE_URL}/serp/google/organic/task_post"
-        
-        # DataForSEO task_post payload format
-        # According to DataForSEO API v3 docs, the payload must be wrapped in "data" array
-        # Required fields: keyword, location_code, language_code
-        # Optional fields: depth (defaults to 10 if not specified)
-        # CRITICAL: Do NOT include device, os, or other fields that cause 40503 error
-        payload = {
-            "data": [{
-                "keyword": str(keyword).strip(),
-                "location_code": int(location_code),
-                "language_code": str(language_code).strip().lower(),
-                "depth": int(depth) if depth else 10
-            }]
-        }
-        
-        # Validate payload before sending
-        if not payload["data"][0]["keyword"]:
-            logger.error("Empty keyword provided to DataForSEO")
-            return {"success": False, "error": "Keyword cannot be empty"}
-        
-        if payload["data"][0]["location_code"] <= 0:
-            logger.error(f"Invalid location_code: {location_code}")
-            return {"success": False, "error": f"Invalid location_code: {location_code}"}
-        
-        # Log exact payload for debugging (this will help identify the issue)
-        logger.info(f"DataForSEO task_post payload: {json.dumps(payload, indent=2)}")
+        self._request_count += 1
         
         try:
+            # Validate and build payload
+            payload_obj = DataForSEOPayload(
+                keyword=keyword,
+                location_code=location_code,
+                language_code=language_code,
+                depth=depth
+            )
+            
+            payload = self._build_payload(payload_obj)
+            
+            # Log exact payload being sent
+            payload_json = json.dumps(payload, ensure_ascii=False, indent=2)
+            logger.info(f"DataForSEO Request #{self._request_count}")
+            logger.info(f"Payload (exact):\n{payload_json}")
+            
+            url = f"{self.BASE_URL}/serp/google/organic/task_post"
+            
+            # Store request for diagnostics
+            self._last_request = {
+                "url": url,
+                "payload": payload,
+                "timestamp": datetime.utcnow().isoformat(),
+                "keyword": keyword,
+                "location_code": location_code
+            }
+            
             async with httpx.AsyncClient(timeout=60.0) as client:
-                logger.info(f"Making DataForSEO SERP API call for keyword: '{keyword}'")
-                logger.debug(f"DataForSEO task_post URL: {url}")
-                logger.debug(f"DataForSEO task_post payload: {payload}")
+                # CRITICAL: DataForSEO requires exact JSON format
+                # Send as properly serialized JSON string to ensure exact format
+                json_str = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
+                logger.debug(f"Serialized JSON: {json_str}")
                 
-                # DataForSEO is very strict about JSON format
-                # Send as JSON string to ensure proper serialization (avoid httpx auto-serialization issues)
-                json_payload_str = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
-                logger.debug(f"DataForSEO JSON payload string: {json_payload_str}")
-                
-                # Ensure Content-Type is explicitly set
-                headers_with_content_type = {
-                    **self.headers,
-                    "Content-Type": "application/json"
-                }
-                
-                # Send as raw JSON string content
+                # Send with explicit content type
                 response = await client.post(
-                    url, 
-                    headers=headers_with_content_type, 
-                    content=json_payload_str.encode('utf-8')
+                    url,
+                    headers=self.headers,
+                    content=json_str.encode('utf-8')
                 )
                 
-                # Always parse JSON first, even on HTTP errors
+                # Parse response
                 try:
                     result = response.json()
-                except:
-                    result = {"status_code": response.status_code, "status_message": response.text}
-                
-                logger.debug(f"DataForSEO task_post response: status_code={result.get('status_code')}, tasks_count={result.get('tasks_count', 0)}")
-                logger.debug(f"Full response: {result}")
-                
-                # Check for HTTP errors
-                if response.status_code != 200:
-                    error_msg = result.get("status_message", f"HTTP {response.status_code}: {response.text}")
-                    logger.error(f"DataForSEO task_post HTTP error: {error_msg}")
+                except Exception as e:
+                    error_msg = f"Failed to parse JSON response: {e}"
+                    logger.error(error_msg)
+                    logger.error(f"Response text: {response.text[:500]}")
+                    self._error_count += 1
+                    self._last_error = error_msg
                     return {"success": False, "error": error_msg}
                 
-                # DataForSEO returns status_code 20000 for successful API call
-                # But individual tasks can have their own status_code
-                if result.get("status_code") == 20000:
-                    tasks = result.get("tasks", [])
-                    if not tasks or len(tasks) == 0:
-                        logger.error("No tasks in DataForSEO task_post response")
-                        logger.error(f"Full response: {result}")
-                        return {"success": False, "error": "No tasks returned from DataForSEO"}
-                    
-                    task = tasks[0]
-                    task_status = task.get("status_code")
-                    
-                    # Check if task was created successfully
-                    # Status codes: 20000 = success, 40503 = POST Data Is Invalid
-                    if task_status != 20000:
-                        error_msg = task.get("status_message", f"Task creation failed with status {task_status}")
-                        error_code = task.get("status_code")
-                        logger.error(f"DataForSEO task_post failed with status {error_code}: {error_msg}")
-                        logger.error(f"Task response: {task}")
-                        logger.error(f"Full API response: {result}")
-                        # Return the actual error message from DataForSEO
-                        return {"success": False, "error": error_msg}
-                    
-                    task_id = task.get("id")
-                    if not task_id:
-                        logger.error("No task ID in DataForSEO task response")
-                        logger.error(f"Task response: {task}")
-                        return {"success": False, "error": "No task ID returned from DataForSEO"}
-                    
-                    logger.info(f"✅ DataForSEO task created successfully: {task_id}")
-                    
-                    # Poll for results
-                    return await self._get_serp_results(task_id)
-                else:
-                    # Top-level API error (not task-level)
-                    error_code = result.get("status_code")
-                    error_msg = result.get("status_message", f"API error: {error_code}")
-                    logger.error(f"DataForSEO API top-level error {error_code}: {error_msg}")
-                    logger.error(f"Full response: {result}")
-                    
-                    # Check if there are tasks with more specific errors
-                    tasks = result.get("tasks", [])
-                    if tasks and len(tasks) > 0:
-                        task = tasks[0]
-                        task_error = task.get("status_message")
-                        task_code = task.get("status_code")
-                        if task_error:
-                            logger.error(f"Task-level error {task_code}: {task_error}")
-                            return {"success": False, "error": task_error}
-                    
+                # Store response for diagnostics
+                self._last_response = {
+                    "status_code": response.status_code,
+                    "result": result,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+                # Validate response
+                is_valid, error_msg = self._validate_response(response, result)
+                
+                if not is_valid:
+                    logger.error(f"DataForSEO validation failed: {error_msg}")
+                    logger.error(f"Full response: {json.dumps(result, indent=2)}")
+                    self._error_count += 1
+                    self._last_error = error_msg
                     return {"success": False, "error": error_msg}
+                
+                # Extract task ID
+                task = result.get("tasks", [])[0]
+                task_id = task.get("id")
+                
+                if not task_id:
+                    error_msg = "No task ID in response"
+                    logger.error(error_msg)
+                    logger.error(f"Task object: {json.dumps(task, indent=2)}")
+                    self._error_count += 1
+                    self._last_error = error_msg
+                    return {"success": False, "error": error_msg}
+                
+                logger.info(f"✅ DataForSEO task created: {task_id}")
+                self._success_count += 1
+                
+                # Poll for results
+                return await self._get_serp_results(task_id)
+        
+        except ValueError as e:
+            # Validation error
+            error_msg = f"Payload validation error: {str(e)}"
+            logger.error(error_msg)
+            self._error_count += 1
+            self._last_error = error_msg
+            return {"success": False, "error": error_msg}
         
         except Exception as e:
-            logger.error(f"DataForSEO API call failed: {str(e)}")
-            return {"success": False, "error": str(e)}
+            error_msg = f"DataForSEO API call failed: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            self._error_count += 1
+            self._last_error = error_msg
+            return {"success": False, "error": error_msg}
     
     async def _get_serp_results(self, task_id: str, max_attempts: int = 30) -> Dict[str, Any]:
         """
@@ -216,31 +294,24 @@ class DataForSEOClient:
         Returns:
             Dictionary with parsed results
         """
-        # DataForSEO task_get endpoint - use GET with task ID in URL path
-        # Based on worker implementation and API docs, this is the correct format
         url = f"{self.BASE_URL}/serp/google/organic/task_get/advanced/{task_id}"
         
         logger.info(f"Polling DataForSEO task: {task_id}")
-        logger.debug(f"Polling URL: {url}")
         
-        # Wait a bit before first poll (task needs time to be created)
-        await asyncio.sleep(5)  # Increased wait time
+        # Wait before first poll
+        await asyncio.sleep(5)
         
         for attempt in range(max_attempts):
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
-                    logger.debug(f"Polling DataForSEO task {task_id} (attempt {attempt + 1}/{max_attempts})")
-                    # DataForSEO task_get uses GET request with task ID in URL path
+                    logger.debug(f"Poll attempt {attempt + 1}/{max_attempts} for task {task_id}")
                     response = await client.get(url, headers=self.headers)
                     response.raise_for_status()
                     result = response.json()
                     
-                    logger.debug(f"DataForSEO poll response status_code: {result.get('status_code')}")
-                    
                     if result.get("status_code") == 20000:
                         tasks = result.get("tasks", [])
                         if not tasks:
-                            logger.warning(f"No tasks in response for task_id {task_id}")
                             await asyncio.sleep(2)
                             continue
                         
@@ -248,17 +319,15 @@ class DataForSEOClient:
                         task_status = task.get("status_code")
                         
                         if task_status == 20000:
-                            # Results are ready
+                            # Results ready
                             task_result = task.get("result", [])
                             if not task_result:
-                                logger.warning(f"No result data in task {task_id}")
                                 return {"success": False, "error": "No result data in task"}
                             
                             items = task_result[0].get("items", [])
                             
                             parsed_results = []
                             for item in items:
-                                # Only include organic results
                                 if item.get("type") == "organic":
                                     parsed_results.append({
                                         "title": item.get("title", ""),
@@ -268,58 +337,60 @@ class DataForSEOClient:
                                         "domain": item.get("domain", ""),
                                     })
                             
-                            logger.info(f"DataForSEO returned {len(parsed_results)} organic results")
+                            logger.info(f"✅ Retrieved {len(parsed_results)} organic results")
                             return {
                                 "success": True,
                                 "results": parsed_results,
                                 "total": len(parsed_results)
                             }
                         elif task_status == 20200:
-                            # Still processing, wait and retry
-                            logger.debug(f"Task {task_id} still processing (20200), waiting...")
+                            # Still processing
                             await asyncio.sleep(3)
                             continue
                         else:
-                            error_msg = task.get("status_message", f"Unknown status code: {task_status}")
-                            logger.error(f"Task {task_id} failed with status {task_status}: {error_msg}")
+                            error_msg = task.get("status_message", f"Status {task_status}")
                             return {"success": False, "error": error_msg}
                     else:
                         error_msg = result.get("status_message", f"API error: {result.get('status_code')}")
-                        logger.error(f"DataForSEO API error: {error_msg}")
                         return {"success": False, "error": error_msg}
             
             except httpx.HTTPStatusError as e:
-                error_text = e.response.text if e.response else "No response text"
-                try:
-                    error_json = e.response.json() if e.response else {}
-                    error_status = error_json.get("status_code")
-                    error_msg = error_json.get("status_message", error_text)
-                    
-                    # 40400 means task not found - might need to wait longer or task was never created
-                    if error_status == 40400:
-                        logger.warning(f"Task {task_id} not found (40400) - attempt {attempt + 1}/{max_attempts}. Waiting longer...")
-                        if attempt < max_attempts - 1:
-                            await asyncio.sleep(5)  # Wait longer for 404 errors
-                            continue
-                        else:
-                            return {"success": False, "error": f"Task not found after {max_attempts} attempts. Task may not have been created or expired."}
-                    else:
-                        logger.error(f"HTTP error polling DataForSEO task {task_id}: {e.response.status_code} - {error_msg}")
-                        if attempt == max_attempts - 1:
-                            return {"success": False, "error": f"HTTP {e.response.status_code}: {error_msg}"}
-                        await asyncio.sleep(3)
-                except:
-                    logger.error(f"HTTP error polling DataForSEO task {task_id}: {e.response.status_code} - {error_text}")
+                if e.response.status_code == 404:
+                    # Task not found - wait longer
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(5)
+                        continue
+                    return {"success": False, "error": f"Task not found after {max_attempts} attempts"}
+                else:
+                    error_msg = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
                     if attempt == max_attempts - 1:
-                        return {"success": False, "error": f"HTTP {e.response.status_code}: {error_text}"}
+                        return {"success": False, "error": error_msg}
                     await asyncio.sleep(3)
             except Exception as e:
-                logger.error(f"Error polling DataForSEO results for task {task_id}: {str(e)}", exc_info=True)
+                logger.error(f"Error polling task {task_id}: {str(e)}", exc_info=True)
                 if attempt == max_attempts - 1:
                     return {"success": False, "error": str(e)}
                 await asyncio.sleep(3)
         
         return {"success": False, "error": "Timeout waiting for results"}
+    
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """
+        Get diagnostic information about API usage
+        
+        Returns:
+            Dictionary with diagnostic data
+        """
+        return {
+            "request_count": self._request_count,
+            "success_count": self._success_count,
+            "error_count": self._error_count,
+            "success_rate": (self._success_count / self._request_count * 100) if self._request_count > 0 else 0,
+            "last_request": self._last_request,
+            "last_response": self._last_response,
+            "last_error": self._last_error,
+            "credentials_configured": bool(self.login and self.password)
+        }
     
     async def on_page_task_post(self, domain: str, max_crawl_pages: int = 5) -> Dict[str, Any]:
         """
@@ -363,4 +434,3 @@ class DataForSEOClient:
         except Exception as e:
             logger.error(f"DataForSEO on-page task submission failed: {str(e)}")
             return {"success": False, "error": str(e)}
-

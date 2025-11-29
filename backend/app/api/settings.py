@@ -198,14 +198,24 @@ async def test_service(service_name: str):
                     "message": "DataForSEO credentials not configured"
                 }
             client = DataForSEOClient(login, password)
-            # Test by getting location code
-            location_code = await client.get_location_code("United States")
-            return {
-                "success": True,
-                "status": "connected",
-                "message": f"DataForSEO is working. Location code for USA: {location_code}",
-                "test_result": {"location_code": location_code}
-            }
+            # Test by getting location code (synchronous method)
+            location_code = client.get_location_code("usa")
+            # Test with a simple search query
+            test_result = await client.serp_google_organic("test query", location_code=location_code, depth=1)
+            if test_result.get("success"):
+                return {
+                    "success": True,
+                    "status": "connected",
+                    "message": f"DataForSEO is working. Location code for USA: {location_code}",
+                    "test_result": {"location_code": location_code, "api_test": "passed"}
+                }
+            else:
+                return {
+                    "success": False,
+                    "status": "error",
+                    "message": f"DataForSEO test failed: {test_result.get('error')}",
+                    "test_result": {"location_code": location_code, "api_test": "failed", "error": test_result.get("error")}
+                }
         
         elif "gemini" in service_lower:
             from app.clients.gemini import GeminiClient
@@ -285,6 +295,52 @@ class AutomationSettings(BaseModel):
     categories: list[str] = Field(default_factory=list, description="Selected categories for scraping")
     keywords: Optional[str] = Field(None, description="Optional keywords for scraping")
     max_results: int = Field(100, ge=1, le=1000, description="Maximum results per scrape")
+
+
+@router.get("/diagnostics/dataforseo")
+async def get_dataforseo_diagnostics():
+    """
+    Get diagnostic information about DataForSEO API usage
+    
+    Returns:
+        Diagnostic data including request counts, success rates, last request/response
+    """
+    try:
+        from app.clients.dataforseo import DataForSEOClient
+        
+        login = os.getenv("DATAFORSEO_LOGIN")
+        password = os.getenv("DATAFORSEO_PASSWORD")
+        
+        if not login or not password:
+            return {
+                "error": "DataForSEO not configured",
+                "credentials_configured": False
+            }
+        
+        client = DataForSEOClient(login, password)
+        diagnostics = client.get_diagnostics()
+        
+        return {
+            "success": True,
+            "diagnostics": diagnostics,
+            "payload_format": {
+                "expected": {
+                    "data": [{
+                        "keyword": "string (required)",
+                        "location_code": "integer (required)",
+                        "language_code": "string (required, 2 chars)",
+                        "depth": "integer (optional, 1-100)"
+                    }]
+                },
+                "note": "Payload must be wrapped in 'data' array. No device/os fields."
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting DataForSEO diagnostics: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 @router.get("/automation", response_model=AutomationSettings)

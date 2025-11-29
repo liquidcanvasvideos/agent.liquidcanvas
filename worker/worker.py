@@ -11,27 +11,25 @@ from pathlib import Path
 
 load_dotenv()
 
-# Add backend to Python path so we can import models
-# This handles both local development and Render deployment
-worker_dir = Path(__file__).resolve().parent
-backend_dir = worker_dir.parent / "backend"
-if backend_dir.exists():
-    sys.path.insert(0, str(backend_dir))
-    logger = logging.getLogger(__name__)
-    logger.info(f"Added backend to path: {backend_dir}")
-else:
-    # If backend is not in parent, try current directory structure
-    # Render might have different structure
-    logger = logging.getLogger(__name__)
-    logger.warning(f"Backend directory not found at {backend_dir}, using current path")
-
-# Configure logging
+# Configure logging first
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
 logger = logging.getLogger(__name__)
+
+# Add backend to Python path so we can import models
+# This handles both local development and Render deployment
+worker_dir = Path(__file__).resolve().parent
+backend_dir = worker_dir.parent / "backend"
+if backend_dir.exists():
+    sys.path.insert(0, str(backend_dir))
+    logger.info(f"Added backend to path: {backend_dir}")
+else:
+    # If backend is not in parent, try current directory structure
+    # Render might have different structure
+    logger.warning(f"Backend directory not found at {backend_dir}, using current path")
 
 # Redis connection
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")

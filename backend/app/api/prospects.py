@@ -30,10 +30,32 @@ load_dotenv()
 
 router = APIRouter()
 
-# Redis connection for RQ
-redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-redis_conn = redis.from_url(redis_url)
-enrichment_queue = Queue("enrichment", connection=redis_conn)
+# Redis connection for RQ - lazy initialization
+_redis_conn = None
+_queues = {}
+
+def get_redis_connection():
+    """Get or create Redis connection (lazy initialization)"""
+    global _redis_conn
+    if _redis_conn is None:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        try:
+            _redis_conn = redis.from_url(redis_url, socket_connect_timeout=2, socket_timeout=2)
+            # Test connection
+            _redis_conn.ping()
+        except Exception as e:
+            logger.warning(f"Redis connection failed: {e}. Queue operations will be disabled.")
+            _redis_conn = None
+    return _redis_conn
+
+def get_queue(name: str):
+    """Get or create a queue (lazy initialization)"""
+    if name not in _queues:
+        conn = get_redis_connection()
+        if conn is None:
+            return None
+        _queues[name] = Queue(name, connection=conn)
+    return _queues.get(name)
 
 
 @router.post("/enrich")
@@ -66,7 +88,11 @@ async def create_enrichment_job(
     # Queue RQ task
     try:
         from worker.tasks.enrichment import enrich_prospects_task
-        enrichment_queue.enqueue(enrich_prospects_task, str(job.id))
+        queue = get_queue("enrichment")
+        if queue:
+            queue.enqueue(enrich_prospects_task, str(job.id))
+        else:
+            logger.warning("Redis not available - enrichment job not queued")
         return {
             "job_id": job.id,
             "status": "queued",

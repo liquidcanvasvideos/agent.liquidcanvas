@@ -22,13 +22,32 @@ load_dotenv()
 
 router = APIRouter()
 
-# Redis connection for RQ
-redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-redis_conn = redis.from_url(redis_url)
-discovery_queue = Queue("discovery", connection=redis_conn)
-scoring_queue = Queue("scoring", connection=redis_conn)
-send_queue = Queue("send", connection=redis_conn)
-followup_queue = Queue("followup", connection=redis_conn)
+# Redis connection for RQ - lazy initialization
+_redis_conn = None
+_queues = {}
+
+def get_redis_connection():
+    """Get or create Redis connection (lazy initialization)"""
+    global _redis_conn
+    if _redis_conn is None:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        try:
+            _redis_conn = redis.from_url(redis_url, socket_connect_timeout=2, socket_timeout=2)
+            # Test connection
+            _redis_conn.ping()
+        except Exception as e:
+            logger.warning(f"Redis connection failed: {e}. Queue operations will be disabled.")
+            _redis_conn = None
+    return _redis_conn
+
+def get_queue(name: str):
+    """Get or create a queue (lazy initialization)"""
+    if name not in _queues:
+        conn = get_redis_connection()
+        if conn is None:
+            return None
+        _queues[name] = Queue(name, connection=conn)
+    return _queues.get(name)
 
 
 @router.post("/discover", response_model=JobResponse)
@@ -63,7 +82,11 @@ async def create_discovery_job(
     # Queue RQ task
     try:
         from worker.tasks.discovery import discover_websites_task
-        discovery_queue.enqueue(discover_websites_task, str(job.id))
+        queue = get_queue("discovery")
+        if queue:
+            queue.enqueue(discover_websites_task, str(job.id))
+        else:
+            logger.warning("Redis not available - discovery job not queued")
     except ImportError:
         logger.warning("Worker tasks not available - discovery job not queued. Ensure worker service is running.")
         job.status = "failed"
@@ -124,7 +147,11 @@ async def create_scoring_job(
     # Queue RQ task
     try:
         from worker.tasks.scoring import score_prospects_task
-        scoring_queue.enqueue(score_prospects_task, str(job.id))
+        queue = get_queue("scoring")
+        if queue:
+            queue.enqueue(score_prospects_task, str(job.id))
+        else:
+            logger.warning("Redis not available - scoring job not queued")
     except ImportError:
         logger.warning("Worker tasks not available - scoring job not queued.")
         job.status = "failed"
@@ -167,7 +194,11 @@ async def create_send_job(
     # Queue RQ task
     try:
         from worker.tasks.send import send_emails_task
-        send_queue.enqueue(send_emails_task, str(job.id))
+        queue = get_queue("send")
+        if queue:
+            queue.enqueue(send_emails_task, str(job.id))
+        else:
+            logger.warning("Redis not available - send job not queued")
     except ImportError:
         logger.warning("Worker tasks not available - send job not queued.")
         job.status = "failed"
@@ -210,7 +241,11 @@ async def create_followup_job(
     # Queue RQ task
     try:
         from worker.tasks.followup import send_followups_task
-        followup_queue.enqueue(send_followups_task, str(job.id))
+        queue = get_queue("followup")
+        if queue:
+            queue.enqueue(send_followups_task, str(job.id))
+        else:
+            logger.warning("Redis not available - followup job not queued")
     except ImportError:
         logger.warning("Worker tasks not available - followup job not queued.")
         job.status = "failed"
@@ -243,7 +278,11 @@ async def check_replies(
     # Queue RQ task
     try:
         from worker.tasks.reply_handler import check_replies_task
-        followup_queue.enqueue(check_replies_task)
+        queue = get_queue("followup")
+        if queue:
+            queue.enqueue(check_replies_task)
+        else:
+            logger.warning("Redis not available - reply check job not queued")
         return {
             "job_id": job.id,
             "status": "queued",

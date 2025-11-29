@@ -143,7 +143,7 @@ export default function JobStatusPanel({ jobs, expanded = false }: JobStatusPane
               {queries.slice(0, 10).map((q: any, idx: number) => (
                 <div key={idx} className="text-xs bg-white rounded p-2 border border-gray-200">
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-800">"{q.query}"</span>
+                    <span className="font-medium text-gray-800">&quot;{q.query}&quot;</span>
                     <span className={`px-1.5 py-0.5 rounded text-xs ${
                       q.status === 'success' ? 'bg-green-100 text-green-700' :
                       q.status === 'failed' ? 'bg-red-100 text-red-700' :
@@ -170,7 +170,7 @@ export default function JobStatusPanel({ jobs, expanded = false }: JobStatusPane
         {stats && stats.total_results_found === 0 && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
             <div className="text-xs text-yellow-800">
-              <strong>⚠️ No websites found:</strong> The search queries didn't return any results from DataForSEO.
+              <strong>⚠️ No websites found:</strong> The search queries didn&apos;t return any results from DataForSEO.
               This could mean:
               <ul className="list-disc list-inside mt-1 space-y-0.5">
                 <li>No websites match your search criteria</li>

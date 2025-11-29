@@ -28,6 +28,7 @@ export default function WebsitesTable() {
     loadWebsites()
     const interval = setInterval(loadWebsites, 10000) // Refresh every 10 seconds
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skip])
 
   const formatDate = (dateString: string) => {

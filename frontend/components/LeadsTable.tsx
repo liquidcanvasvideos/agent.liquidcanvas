@@ -44,6 +44,7 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
     loadProspects()
     const interval = setInterval(loadProspects, 15000) // Refresh every 15 seconds
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skip, emailsOnly])
 
   const formatDate = (dateString: string) => {

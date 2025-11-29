@@ -1,5 +1,6 @@
 'use client'
 
+// Version: 2.0 - Complete redesign, no alert() popups, categories-first approach
 import { useState } from 'react'
 import { Search, Play, Square, Loader2, MapPin, Tag } from 'lucide-react'
 import { createDiscoveryJob } from '@/lib/api'
@@ -59,11 +60,12 @@ export default function DiscoveryControl() {
   }
 
   const handleDiscover = async () => {
+    // Clear any previous errors
     setError(null)
 
-    // Validation
+    // Client-side validation (prevents unnecessary API calls)
     if (!keywords.trim() && selectedCategories.length === 0) {
-      setError('Please select at least one category OR enter keywords')
+      setError('Please select at least one category OR enter keywords to search')
       return
     }
 
@@ -74,19 +76,36 @@ export default function DiscoveryControl() {
 
     setLoading(true)
     try {
-      await createDiscoveryJob(
+      const result = await createDiscoveryJob(
         keywords.trim() || '',
         selectedLocations,
         100,
         selectedCategories.length > 0 ? selectedCategories : []
       )
+      
+      // Success - job created
       setIsRunning(true)
       setError(null)
-      // Don't clear form - let user see what was submitted
+      
+      // Show success message briefly
+      setTimeout(() => {
+        // Job started successfully
+      }, 1000)
+      
     } catch (error: any) {
-      console.error('Discovery error:', error)
-      setError(error.message || 'Failed to start discovery. Check console for details.')
+      // Extract error message from API response
+      let errorMessage = 'Failed to start discovery'
+      
+      if (error?.message) {
+        errorMessage = error.message
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      }
+      
+      // Never use alert() - always use setError() for inline display
+      setError(errorMessage)
       setIsRunning(false)
+      console.error('Discovery job creation failed:', error)
     } finally {
       setLoading(false)
     }

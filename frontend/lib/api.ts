@@ -95,19 +95,36 @@ export async function createDiscoveryJob(
   maxResults?: number,
   categories?: string[]
 ): Promise<Job> {
-  const res = await authenticatedFetch(`${API_BASE}/jobs/discover`, {
+  // Add cache-busting timestamp to ensure fresh requests
+  const timestamp = Date.now()
+  const url = `${API_BASE}/jobs/discover?_t=${timestamp}`
+  
+  const res = await authenticatedFetch(url, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+    },
     body: JSON.stringify({
-      keywords,
-      locations,
+      keywords: keywords || '',
+      locations: locations || [],
       max_results: maxResults || 100,
-      categories,
+      categories: categories || [],
     }),
   })
+  
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: 'Failed to create discovery job' }))
-    throw new Error(error.detail || 'Failed to create discovery job')
+    let errorDetail = 'Failed to create discovery job'
+    try {
+      const errorData = await res.json()
+      errorDetail = errorData.detail || errorData.message || errorDetail
+    } catch {
+      // If JSON parsing fails, use status text
+      errorDetail = res.statusText || errorDetail
+    }
+    throw new Error(errorDetail)
   }
+  
   return res.json()
 }
 

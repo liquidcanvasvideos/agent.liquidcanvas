@@ -13,15 +13,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from dotenv import load_dotenv
 
-# Add worker directory to path to import clients
+# Add repo root to path to import worker.clients
+# This allows us to import from worker.clients.dataforseo
 backend_dir = Path(__file__).resolve().parents[2]
-worker_dir = backend_dir / "worker"
-if worker_dir.exists():
-    sys.path.insert(0, str(worker_dir))
+repo_root = backend_dir.parent  # Go up one more level to repo root
+if repo_root.exists():
+    sys.path.insert(0, str(repo_root))
+    logger = logging.getLogger(__name__)
+    logger.info(f"Added repo root to path: {repo_root}")
+else:
+    # Fallback: try adding worker directory directly
+    worker_dir = backend_dir / "worker"
+    if worker_dir.exists():
+        sys.path.insert(0, str(worker_dir))
 
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+# Configure logger after path setup
+if 'logger' not in locals():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
 
 # Import database session from backend
 from app.db.database import AsyncSessionLocal

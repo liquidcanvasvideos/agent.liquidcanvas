@@ -113,22 +113,21 @@ class DataForSEOClient:
         }
         return location_map.get(location.lower(), 2840)  # Default to USA
     
-    def _build_payload(self, payload_obj: DataForSEOPayload) -> dict:
+    def _build_payload(self, payload_obj: DataForSEOPayload) -> list:
         """
         Build DataForSEO API payload according to v3 specification
         
-        According to DataForSEO v3 API docs:
-        - Payload must be wrapped in "data" key
-        - "data" must be an array of task objects
-        - Each task object contains: keyword, location_code, language_code, depth (optional)
-        - NO device, os, or other unsupported fields
+        CRITICAL: DataForSEO v3 expects a DIRECT JSON array, NOT wrapped in "data" key!
+        According to official docs: payload must be a JSON array of task objects.
+        
+        Required fields: keyword, location_code, language_code
+        Optional fields: depth (defaults to 10 if not specified)
+        CRITICAL: Do NOT include device, os, or other fields that cause 40503 error
         
         Returns:
-            Properly formatted payload dict
+            List of task objects (direct array format, NOT wrapped in "data")
         """
-        return {
-            "data": [payload_obj.to_dict()]
-        }
+        return [payload_obj.to_dict()]
     
     def _validate_response(self, response: httpx.Response, result: dict) -> tuple[bool, Optional[str]]:
         """

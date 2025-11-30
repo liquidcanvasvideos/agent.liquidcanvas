@@ -249,7 +249,21 @@ export async function listProspects(
     const error = await res.json().catch(() => ({ detail: 'Failed to list prospects' }))
     throw new Error(error.detail || 'Failed to list prospects')
   }
-  return res.json()
+  const response = await res.json()
+  
+  // Handle new response format: {success: bool, data: {prospects, total, skip, limit}, error: null | string}
+  if (response.success && response.data) {
+    return response.data
+  }
+  
+  // Fallback for old format or error case
+  if (response.error) {
+    throw new Error(response.error)
+  }
+  
+  // If response doesn't match expected format, return empty structure
+  console.warn('Unexpected response format from /api/prospects:', response)
+  return { prospects: [], total: 0, skip: 0, limit: 0 }
 }
 
 export async function getProspect(prospectId: string): Promise<Prospect> {
@@ -324,27 +338,54 @@ export async function getStats(): Promise<Stats | null> {
       listProspects(0, 1000, undefined, undefined, true).catch(() => ({ prospects: [], total: 0, skip: 0, limit: 0 })),
     ])
     
+    // Log actual API responses for debugging
+    console.log('🔍 getStats - allProspects response:', allProspects)
+    console.log('🔍 getStats - prospectsWithEmail response:', prospectsWithEmail)
+    console.log('🔍 getStats - jobs response:', jobs)
+    
+    // Safely extract prospects array
+    const allProspectsList = Array.isArray(allProspects?.prospects) 
+      ? allProspects.prospects 
+      : (allProspects?.data?.prospects && Array.isArray(allProspects.data.prospects))
+        ? allProspects.data.prospects
+        : []
+    
+    const prospectsWithEmailList = Array.isArray(prospectsWithEmail?.prospects)
+      ? prospectsWithEmail.prospects
+      : (prospectsWithEmail?.data?.prospects && Array.isArray(prospectsWithEmail.data.prospects))
+        ? prospectsWithEmail.data.prospects
+        : []
+    
+    // Safely extract totals
+    const allProspectsTotal = allProspects?.total ?? allProspects?.data?.total ?? 0
+    const prospectsWithEmailTotal = prospectsWithEmail?.total ?? prospectsWithEmail?.data?.total ?? 0
+    
     // Count prospects by status
     let prospects_pending = 0
     let prospects_sent = 0
     let prospects_replied = 0
     
-    allProspects.prospects.forEach(p => {
-      if (p.outreach_status === 'pending') prospects_pending++
-      if (p.outreach_status === 'sent') prospects_sent++
-      if (p.outreach_status === 'replied') prospects_replied++
-    })
+    if (Array.isArray(allProspectsList)) {
+      allProspectsList.forEach(p => {
+        if (p?.outreach_status === 'pending') prospects_pending++
+        if (p?.outreach_status === 'sent') prospects_sent++
+        if (p?.outreach_status === 'replied') prospects_replied++
+      })
+    }
+    
+    // Safely handle jobs array
+    const jobsArray = Array.isArray(jobs) ? jobs : []
     
     const stats: Stats = {
-      total_prospects: allProspects.total,
-      prospects_with_email: prospectsWithEmail.total,
+      total_prospects: allProspectsTotal,
+      prospects_with_email: prospectsWithEmailTotal,
       prospects_pending,
       prospects_sent,
       prospects_replied,
-      total_jobs: jobs.length,
-      jobs_running: jobs.filter(j => j.status === 'running').length,
-      jobs_completed: jobs.filter(j => j.status === 'completed').length,
-      jobs_failed: jobs.filter(j => j.status === 'failed').length,
+      total_jobs: jobsArray.length,
+      jobs_running: jobsArray.filter(j => j?.status === 'running').length,
+      jobs_completed: jobsArray.filter(j => j?.status === 'completed').length,
+      jobs_failed: jobsArray.filter(j => j?.status === 'failed').length,
     }
     
     return stats

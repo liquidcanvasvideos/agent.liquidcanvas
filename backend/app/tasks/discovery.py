@@ -286,7 +286,10 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
                             query_stats["results_saved"] += 1
                             search_stats["results_saved"] += 1
                             
-                            logger.info(f"💾 Saved new prospect: {domain} - {result_item.get('title', '')[:50]}")
+                            # Safely get title for logging
+                            log_title = result_item.get("title") or ""
+                            log_title = log_title[:50] if log_title else "No title"
+                            logger.info(f"💾 Saved new prospect: {domain} - {log_title}")
                         
                         search_stats["queries_detail"].append(query_stats)
                         

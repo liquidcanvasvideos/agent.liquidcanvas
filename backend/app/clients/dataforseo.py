@@ -415,12 +415,13 @@ class DataForSEOClient:
                                     continue
                                 
                                 if item.get("type") == "organic":
+                                    # Safely handle None values from API
                                     parsed_results.append({
-                                        "title": item.get("title", ""),
-                                        "url": item.get("url", ""),
-                                        "description": item.get("description", ""),
-                                        "position": item.get("rank_group", 0),
-                                        "domain": item.get("domain", ""),
+                                        "title": item.get("title") or "",
+                                        "url": item.get("url") or "",
+                                        "description": item.get("description") or "",
+                                        "position": item.get("rank_group", 0) or 0,
+                                        "domain": item.get("domain") or "",
                                     })
                             
                             logger.info(f"✅ Retrieved {len(parsed_results)} organic results from task {task_id}")

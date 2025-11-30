@@ -449,6 +449,12 @@ class DataForSEOClient:
                             # Exponential backoff: 3s * (attempt + 1)
                             await asyncio.sleep(min(3 * (attempt + 1), 30))
                             continue
+                        elif task_status == 40601:
+                            # Task Handed - task was handed to another processor, continue polling
+                            logger.info(f"🔄 Task {task_id} handed to processor (40601) - waiting for completion...")
+                            # Exponential backoff: 3s * (attempt + 1)
+                            await asyncio.sleep(min(3 * (attempt + 1), 30))
+                            continue
                         else:
                             # Error status
                             error_msg = task.get("status_message", f"Status {task_status}")

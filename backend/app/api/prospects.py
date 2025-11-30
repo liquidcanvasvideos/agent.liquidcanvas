@@ -104,7 +104,7 @@ async def list_prospects(
     limit: int = 50,
     status: Optional[str] = None,
     min_score: Optional[float] = None,
-    has_email: Optional[bool] = None,
+    has_email: Optional[str] = None,  # Changed to str to handle string "true"/"false" from frontend
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -115,49 +115,98 @@ async def list_prospects(
     - limit: Number of results (max 200)
     - status: Filter by outreach_status
     - min_score: Minimum score threshold
-    - has_email: Filter by whether prospect has email
+    - has_email: Filter by whether prospect has email (string "true"/"false")
     """
-    query = select(Prospect)
+    try:
+        # DEBUG: Log incoming parameters
+        logger.info(f"🔍 GET /api/prospects - skip={skip}, limit={limit}, status={status}, min_score={min_score}, has_email={has_email} (type: {type(has_email)})")
+        
+        # Parse skip and limit as numbers (defensive)
+        skip = int(skip) if skip is not None else 0
+        limit = int(limit) if limit is not None else 50
+        logger.info(f"🔍 Parsed skip={skip} (type: {type(skip)}), limit={limit} (type: {type(limit)})")
+        
+        # Parse has_email as boolean (strict string check)
+        has_email_bool = None
+        if has_email is not None:
+            if isinstance(has_email, str):
+                has_email_bool = has_email.lower() == "true"
+            elif isinstance(has_email, bool):
+                has_email_bool = has_email
+            logger.info(f"🔍 Parsed has_email: '{has_email}' -> {has_email_bool} (type: {type(has_email_bool)})")
+        
+        # Build query
+        query = select(Prospect)
+        logger.info(f"🔍 Initial query object: {query}")
+        
+        # Apply filters
+        if status:
+            query = query.where(Prospect.outreach_status == status)
+            logger.info(f"🔍 Added status filter: {status}")
+        if min_score is not None:
+            query = query.where(Prospect.score >= min_score)
+            logger.info(f"🔍 Added min_score filter: {min_score}")
+        if has_email_bool is not None:
+            if has_email_bool:
+                query = query.where(Prospect.contact_email.isnot(None))
+                logger.info(f"🔍 Added has_email filter: True (contact_email IS NOT NULL)")
+            else:
+                query = query.where(Prospect.contact_email.is_(None))
+                logger.info(f"🔍 Added has_email filter: False (contact_email IS NULL)")
+        
+        logger.info(f"🔍 Final query object: {query}")
+        
+        # Get total count
+        count_query = select(func.count()).select_from(Prospect)
+        if status:
+            count_query = count_query.where(Prospect.outreach_status == status)
+        if min_score is not None:
+            count_query = count_query.where(Prospect.score >= min_score)
+        if has_email_bool is not None:
+            if has_email_bool:
+                count_query = count_query.where(Prospect.contact_email.isnot(None))
+            else:
+                count_query = count_query.where(Prospect.contact_email.is_(None))
+        
+        logger.info(f"🔍 Count query: {count_query}")
+        total_result = await db.execute(count_query)
+        total = total_result.scalar()
+        logger.info(f"🔍 Total count: {total}")
+        
+        # Get paginated results
+        query = query.order_by(Prospect.score.desc(), Prospect.created_at.desc())
+        query = query.offset(skip).limit(min(limit, 200))
+        logger.info(f"🔍 Final paginated query: {query}")
+        
+        result = await db.execute(query)
+        prospects = result.scalars().all()
+        logger.info(f"🔍 Found {len(prospects)} prospects")
+        
+        # Convert to response models
+        prospect_responses = []
+        for p in prospects:
+            try:
+                prospect_responses.append(ProspectResponse.model_validate(p))
+            except Exception as e:
+                logger.error(f"🔴 Error validating prospect {p.id}: {e}", exc_info=True)
+                raise
+        
+        logger.info(f"✅ Successfully returning {len(prospect_responses)} prospects")
+        
+        return ProspectListResponse(
+            prospects=prospect_responses,
+            total=total,
+            skip=skip,
+            limit=limit
+        )
     
-    # Apply filters
-    if status:
-        query = query.where(Prospect.outreach_status == status)
-    if min_score is not None:
-        query = query.where(Prospect.score >= min_score)
-    if has_email is not None:
-        if has_email:
-            query = query.where(Prospect.contact_email.isnot(None))
-        else:
-            query = query.where(Prospect.contact_email.is_(None))
-    
-    # Get total count
-    count_query = select(func.count()).select_from(Prospect)
-    if status:
-        count_query = count_query.where(Prospect.outreach_status == status)
-    if min_score is not None:
-        count_query = count_query.where(Prospect.score >= min_score)
-    if has_email is not None:
-        if has_email:
-            count_query = count_query.where(Prospect.contact_email.isnot(None))
-        else:
-            count_query = count_query.where(Prospect.contact_email.is_(None))
-    
-    total_result = await db.execute(count_query)
-    total = total_result.scalar()
-    
-    # Get paginated results
-    query = query.order_by(Prospect.score.desc(), Prospect.created_at.desc())
-    query = query.offset(skip).limit(min(limit, 200))
-    
-    result = await db.execute(query)
-    prospects = result.scalars().all()
-    
-    return ProspectListResponse(
-        prospects=[ProspectResponse.model_validate(p) for p in prospects],
-        total=total,
-        skip=skip,
-        limit=limit
-    )
+    except Exception as err:
+        logger.error(f"🔴 Prospects endpoint error: {err}", exc_info=True)
+        logger.error(f"🔴 Error type: {type(err).__name__}")
+        logger.error(f"🔴 Error message: {str(err)}")
+        import traceback
+        logger.error(f"🔴 Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(err)}")
 
 
 @router.get("/{prospect_id}", response_model=ProspectResponse)

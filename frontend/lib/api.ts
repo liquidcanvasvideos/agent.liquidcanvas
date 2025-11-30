@@ -331,50 +331,94 @@ export interface Stats {
 
 export async function getStats(): Promise<Stats | null> {
   try {
-    // Fetch all data in parallel
+    // Fetch all data in parallel with defensive error handling
     const [allProspects, jobs, prospectsWithEmail] = await Promise.all([
       listProspects(0, 1000).catch(() => ({ prospects: [], total: 0, skip: 0, limit: 0 })),
       listJobs(0, 100).catch(() => []),
       listProspects(0, 1000, undefined, undefined, true).catch(() => ({ prospects: [], total: 0, skip: 0, limit: 0 })),
     ])
     
-    // Log actual API responses for debugging
-    console.log('🔍 getStats - allProspects response:', allProspects)
-    console.log('🔍 getStats - prospectsWithEmail response:', prospectsWithEmail)
-    console.log('🔍 getStats - jobs response:', jobs)
+    // Log actual API responses for debugging (only in development)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🔍 getStats - allProspects response:', allProspects)
+      console.log('🔍 getStats - prospectsWithEmail response:', prospectsWithEmail)
+      console.log('🔍 getStats - jobs response:', jobs)
+    }
     
-    // Safely extract prospects array
-    const allProspectsList = Array.isArray(allProspects?.prospects) 
-      ? allProspects.prospects 
-      : (allProspects?.data?.prospects && Array.isArray(allProspects.data.prospects))
-        ? allProspects.data.prospects
-        : []
+    // Defensive guard: Ensure all inputs are defined before processing
+    if (!allProspects && !prospectsWithEmail && !jobs) {
+      console.warn('⚠️ getStats: All API responses are undefined/null')
+      return null
+    }
     
-    const prospectsWithEmailList = Array.isArray(prospectsWithEmail?.prospects)
-      ? prospectsWithEmail.prospects
-      : (prospectsWithEmail?.data?.prospects && Array.isArray(prospectsWithEmail.data.prospects))
-        ? prospectsWithEmail.data.prospects
-        : []
+    // Safely extract prospects array with multiple fallbacks
+    let allProspectsList: any[] = []
+    if (allProspects) {
+      if (Array.isArray(allProspects.prospects)) {
+        allProspectsList = allProspects.prospects
+      } else if (allProspects.data && Array.isArray(allProspects.data.prospects)) {
+        allProspectsList = allProspects.data.prospects
+      } else if (Array.isArray(allProspects)) {
+        allProspectsList = allProspects
+      }
+    }
     
-    // Safely extract totals
-    const allProspectsTotal = allProspects?.total ?? allProspects?.data?.total ?? 0
-    const prospectsWithEmailTotal = prospectsWithEmail?.total ?? prospectsWithEmail?.data?.total ?? 0
+    let prospectsWithEmailList: any[] = []
+    if (prospectsWithEmail) {
+      if (Array.isArray(prospectsWithEmail.prospects)) {
+        prospectsWithEmailList = prospectsWithEmail.prospects
+      } else if (prospectsWithEmail.data && Array.isArray(prospectsWithEmail.data.prospects)) {
+        prospectsWithEmailList = prospectsWithEmail.data.prospects
+      } else if (Array.isArray(prospectsWithEmail)) {
+        prospectsWithEmailList = prospectsWithEmail
+      }
+    }
     
-    // Count prospects by status
+    // Safely extract totals with defensive checks
+    const allProspectsTotal = (allProspects?.total ?? allProspects?.data?.total ?? 0) || 0
+    const prospectsWithEmailTotal = (prospectsWithEmail?.total ?? prospectsWithEmail?.data?.total ?? 0) || 0
+    
+    // Count prospects by status - defensive forEach guard
     let prospects_pending = 0
     let prospects_sent = 0
     let prospects_replied = 0
     
-    if (Array.isArray(allProspectsList)) {
-      allProspectsList.forEach(p => {
-        if (p?.outreach_status === 'pending') prospects_pending++
-        if (p?.outreach_status === 'sent') prospects_sent++
-        if (p?.outreach_status === 'replied') prospects_replied++
-      })
+    // Critical defensive guard: Never call forEach on undefined/null
+    if (allProspectsList && Array.isArray(allProspectsList) && allProspectsList.length > 0) {
+      try {
+        allProspectsList.forEach((p: any) => {
+          if (p && typeof p === 'object' && p.outreach_status) {
+            if (p.outreach_status === 'pending') prospects_pending++
+            if (p.outreach_status === 'sent') prospects_sent++
+            if (p.outreach_status === 'replied') prospects_replied++
+          }
+        })
+      } catch (forEachError) {
+        console.error('⚠️ Error in forEach loop (likely from devtools hook):', forEachError)
+        // Continue with zero counts rather than failing
+      }
     }
     
-    // Safely handle jobs array
-    const jobsArray = Array.isArray(jobs) ? jobs : []
+    // Safely handle jobs array - defensive guard
+    let jobsArray: any[] = []
+    if (jobs) {
+      if (Array.isArray(jobs)) {
+        jobsArray = jobs
+      } else if (jobs.data && Array.isArray(jobs.data)) {
+        jobsArray = jobs.data
+      }
+    }
+    
+    // Defensive filter operations
+    const jobs_running = jobsArray && Array.isArray(jobsArray) 
+      ? jobsArray.filter((j: any) => j && j.status === 'running').length 
+      : 0
+    const jobs_completed = jobsArray && Array.isArray(jobsArray)
+      ? jobsArray.filter((j: any) => j && j.status === 'completed').length
+      : 0
+    const jobs_failed = jobsArray && Array.isArray(jobsArray)
+      ? jobsArray.filter((j: any) => j && j.status === 'failed').length
+      : 0
     
     const stats: Stats = {
       total_prospects: allProspectsTotal,
@@ -382,15 +426,16 @@ export async function getStats(): Promise<Stats | null> {
       prospects_pending,
       prospects_sent,
       prospects_replied,
-      total_jobs: jobsArray.length,
-      jobs_running: jobsArray.filter(j => j?.status === 'running').length,
-      jobs_completed: jobsArray.filter(j => j?.status === 'completed').length,
-      jobs_failed: jobsArray.filter(j => j?.status === 'failed').length,
+      total_jobs: jobsArray.length || 0,
+      jobs_running,
+      jobs_completed,
+      jobs_failed,
     }
     
     return stats
   } catch (error) {
     console.error('Failed to get stats:', error)
+    // Return null instead of throwing to prevent crashes from devtools hooks
     return null
   }
 }

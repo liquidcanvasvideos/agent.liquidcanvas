@@ -135,8 +135,27 @@ async def list_prospects(
                 has_email_bool = has_email
             logger.info(f"🔍 Parsed has_email: '{has_email}' -> {has_email_bool} (type: {type(has_email_bool)})")
         
-        # Build query
-        query = select(Prospect)
+        # Build query - explicitly select only columns that exist
+        # Use select() with explicit columns to avoid loading discovery_query_id if it doesn't exist yet
+        query = select(
+            Prospect.id,
+            Prospect.domain,
+            Prospect.page_url,
+            Prospect.page_title,
+            Prospect.contact_email,
+            Prospect.contact_method,
+            Prospect.da_est,
+            Prospect.score,
+            Prospect.outreach_status,
+            Prospect.last_sent,
+            Prospect.followups_sent,
+            Prospect.draft_subject,
+            Prospect.draft_body,
+            Prospect.dataforseo_payload,
+            Prospect.hunter_payload,
+            Prospect.created_at,
+            Prospect.updated_at
+        )
         logger.info(f"🔍 Initial query object: {query}")
         
         # Apply filters

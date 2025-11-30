@@ -32,8 +32,8 @@ class Prospect(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # Relationships
-    discovery_query = relationship("DiscoveryQuery", back_populates="prospects")
+    # Relationships - lazy load to avoid errors if column doesn't exist yet
+    discovery_query = relationship("DiscoveryQuery", back_populates="prospects", lazy="select")
     
     def __repr__(self):
         return f"<Prospect(id={self.id}, domain={self.domain}, status={self.outreach_status})>"

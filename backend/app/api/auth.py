@@ -20,7 +20,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30 * 24 * 60  # 30 days
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 # Get credentials from environment
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
@@ -80,7 +80,13 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
-    """Get current user from JWT token"""
+    """Get current user from JWT token - requires authentication"""
+    if token is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
@@ -94,4 +100,19 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise credentials_exception
     return username
+
+
+async def get_current_user_optional(token: str = Depends(oauth2_scheme)):
+    """Get current user from JWT token - optional authentication (returns None if no token)"""
+    if token is None:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+        return username
+    except JWTError:
+        # Invalid token - return None instead of raising (for optional auth)
+        return None
 

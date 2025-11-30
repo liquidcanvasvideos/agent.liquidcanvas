@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 import logging
 
 from app.db.database import get_db
+from app.api.auth import get_current_user_optional
 
 logger = logging.getLogger(__name__)
 from app.models.prospect import Prospect
@@ -105,7 +106,8 @@ async def list_prospects(
     status: Optional[str] = None,
     min_score: Optional[float] = None,
     has_email: Optional[str] = None,  # Changed to str to handle string "true"/"false" from frontend
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
 ):
     """
     List prospects with filtering

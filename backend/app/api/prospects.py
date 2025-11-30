@@ -185,12 +185,14 @@ async def list_prospects(
         except Exception as db_err:
             # Check if error is about missing discovery_query_id column
             error_str = str(db_err).lower()
-            if "discovery_query_id" in error_str and "column" in error_str:
+            if "discovery_query_id" in error_str and ("column" in error_str or "does not exist" in error_str):
                 logger.error(f"🔴 Database schema error: discovery_query_id column missing. Migration may not have run.")
                 logger.error(f"🔴 Full error: {db_err}")
+                logger.error(f"🔴 This error indicates the migration 'add_discovery_query' has not been applied to the database.")
+                logger.error(f"🔴 The migration should run automatically on startup. Check startup logs for migration errors.")
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Database schema mismatch: 'discovery_query_id' column does not exist. The migration 'add_discovery_query' needs to be applied. Error: {str(db_err)}"
+                    detail=f"Database schema mismatch: 'discovery_query_id' column does not exist. The migration 'add_discovery_query' (revision: add_discovery_query) needs to be applied. This should happen automatically on startup. Error: {str(db_err)}"
                 )
             raise
         

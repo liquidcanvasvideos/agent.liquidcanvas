@@ -99,7 +99,7 @@ async def create_enrichment_job(
     }
 
 
-@router.get("", response_model=ProspectListResponse)
+@router.get("")
 async def list_prospects(
     skip: int = 0,
     limit: int = 50,
@@ -118,111 +118,162 @@ async def list_prospects(
     - status: Filter by outreach_status
     - min_score: Minimum score threshold
     - has_email: Filter by whether prospect has email (string "true"/"false")
+    
+    Returns: {success: bool, data: [], error: null | string}
     """
+    # Initialize response structure
+    response_data = {
+        "success": False,
+        "data": [],
+        "error": None
+    }
+    
     try:
         # DEBUG: Log incoming parameters
         logger.info(f"🔍 GET /api/prospects - skip={skip}, limit={limit}, status={status}, min_score={min_score}, has_email={has_email} (type: {type(has_email)})")
         
         # Parse skip and limit as numbers (defensive)
-        skip = int(skip) if skip is not None else 0
-        limit = int(limit) if limit is not None else 50
-        logger.info(f"🔍 Parsed skip={skip} (type: {type(skip)}), limit={limit} (type: {type(limit)})")
+        try:
+            skip = int(skip) if skip is not None else 0
+            limit = int(limit) if limit is not None else 50
+            # Enforce max limit
+            limit = min(limit, 1000) if limit > 0 else 50
+            logger.info(f"🔍 Parsed skip={skip} (type: {type(skip)}), limit={limit} (type: {type(limit)})")
+        except (ValueError, TypeError) as e:
+            logger.error(f"🔴 Error parsing skip/limit: {e}")
+            response_data["error"] = f"Invalid pagination parameters: {str(e)}"
+            return response_data
         
         # Parse has_email as boolean (strict string check)
         has_email_bool = None
         if has_email is not None:
-            if isinstance(has_email, str):
-                has_email_bool = has_email.lower() == "true"
-            elif isinstance(has_email, bool):
-                has_email_bool = has_email
-            logger.info(f"🔍 Parsed has_email: '{has_email}' -> {has_email_bool} (type: {type(has_email_bool)})")
+            try:
+                if isinstance(has_email, str):
+                    has_email_bool = has_email.lower() == "true"
+                elif isinstance(has_email, bool):
+                    has_email_bool = has_email
+                logger.info(f"🔍 Parsed has_email: '{has_email}' -> {has_email_bool} (type: {type(has_email_bool)})")
+            except Exception as e:
+                logger.warning(f"⚠️  Error parsing has_email: {e}, treating as None")
+                has_email_bool = None
         
         # Build query
+        logger.info(f"🔍 Building database query...")
         query = select(Prospect)
-        logger.info(f"🔍 Initial query object: {query}")
+        logger.info(f"🔍 Initial query object created")
         
         # Apply filters
-        if status:
-            query = query.where(Prospect.outreach_status == status)
-            logger.info(f"🔍 Added status filter: {status}")
-        if min_score is not None:
-            query = query.where(Prospect.score >= min_score)
-            logger.info(f"🔍 Added min_score filter: {min_score}")
-        if has_email_bool is not None:
-            if has_email_bool:
-                query = query.where(Prospect.contact_email.isnot(None))
-                logger.info(f"🔍 Added has_email filter: True (contact_email IS NOT NULL)")
-            else:
-                query = query.where(Prospect.contact_email.is_(None))
-                logger.info(f"🔍 Added has_email filter: False (contact_email IS NULL)")
+        try:
+            if status:
+                query = query.where(Prospect.outreach_status == status)
+                logger.info(f"🔍 Added status filter: {status}")
+            if min_score is not None:
+                query = query.where(Prospect.score >= min_score)
+                logger.info(f"🔍 Added min_score filter: {min_score}")
+            if has_email_bool is not None:
+                if has_email_bool:
+                    query = query.where(Prospect.contact_email.isnot(None))
+                    logger.info(f"🔍 Added has_email filter: True (contact_email IS NOT NULL)")
+                else:
+                    query = query.where(Prospect.contact_email.is_(None))
+                    logger.info(f"🔍 Added has_email filter: False (contact_email IS NULL)")
+        except Exception as e:
+            logger.error(f"🔴 Error building query filters: {e}", exc_info=True)
+            response_data["error"] = f"Error building query: {str(e)}"
+            return response_data
         
-        logger.info(f"🔍 Final query object: {query}")
+        logger.info(f"🔍 Query filters applied successfully")
         
         # Get total count
-        count_query = select(func.count()).select_from(Prospect)
-        if status:
-            count_query = count_query.where(Prospect.outreach_status == status)
-        if min_score is not None:
-            count_query = count_query.where(Prospect.score >= min_score)
-        if has_email_bool is not None:
-            if has_email_bool:
-                count_query = count_query.where(Prospect.contact_email.isnot(None))
+        logger.info(f"🔍 Executing count query...")
+        try:
+            count_query = select(func.count()).select_from(Prospect)
+            if status:
+                count_query = count_query.where(Prospect.outreach_status == status)
+            if min_score is not None:
+                count_query = count_query.where(Prospect.score >= min_score)
+            if has_email_bool is not None:
+                if has_email_bool:
+                    count_query = count_query.where(Prospect.contact_email.isnot(None))
+                else:
+                    count_query = count_query.where(Prospect.contact_email.is_(None))
+            
+            logger.info(f"🔍 Count query built, executing...")
+            total_result = await db.execute(count_query)
+            total = total_result.scalar() or 0
+            logger.info(f"🔍 Count query executed successfully, total={total}")
+        except Exception as count_err:
+            logger.error(f"🔴 Error executing count query: {count_err}", exc_info=True)
+            error_str = str(count_err).lower()
+            if "discovery_query_id" in error_str and ("column" in error_str or "does not exist" in error_str):
+                response_data["error"] = "Database schema mismatch: 'discovery_query_id' column missing. Migration needs to be applied."
             else:
-                count_query = count_query.where(Prospect.contact_email.is_(None))
-        
-        logger.info(f"🔍 Count query: {count_query}")
-        total_result = await db.execute(count_query)
-        total = total_result.scalar()
-        logger.info(f"🔍 Total count: {total}")
+                response_data["error"] = f"Database error during count query: {str(count_err)}"
+            return response_data
         
         # Get paginated results
-        query = query.order_by(Prospect.score.desc(), Prospect.created_at.desc())
-        query = query.offset(skip).limit(min(limit, 200))
-        logger.info(f"🔍 Final paginated query: {query}")
+        logger.info(f"🔍 Building paginated query...")
+        try:
+            query = query.order_by(Prospect.score.desc(), Prospect.created_at.desc())
+            query = query.offset(skip).limit(limit)
+            logger.info(f"🔍 Paginated query built, executing...")
+        except Exception as e:
+            logger.error(f"🔴 Error building paginated query: {e}", exc_info=True)
+            response_data["error"] = f"Error building paginated query: {str(e)}"
+            return response_data
         
+        # Execute main query
+        logger.info(f"🔍 Executing main query...")
         try:
             result = await db.execute(query)
             prospects = result.scalars().all()
-            logger.info(f"🔍 Found {len(prospects)} prospects")
+            logger.info(f"🔍 Main query executed successfully, found {len(prospects)} prospects")
         except Exception as db_err:
-            # Check if error is about missing discovery_query_id column
+            logger.error(f"🔴 Error executing main query: {db_err}", exc_info=True)
             error_str = str(db_err).lower()
             if "discovery_query_id" in error_str and ("column" in error_str or "does not exist" in error_str):
-                logger.error(f"🔴 Database schema error: discovery_query_id column missing. Migration may not have run.")
-                logger.error(f"🔴 Full error: {db_err}")
-                logger.error(f"🔴 This error indicates the migration 'add_discovery_query' has not been applied to the database.")
-                logger.error(f"🔴 The migration should run automatically on startup. Check startup logs for migration errors.")
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Database schema mismatch: 'discovery_query_id' column does not exist. The migration 'add_discovery_query' (revision: add_discovery_query) needs to be applied. This should happen automatically on startup. Error: {str(db_err)}"
-                )
-            raise
+                logger.error(f"🔴 Database schema error: discovery_query_id column missing")
+                response_data["error"] = "Database schema mismatch: 'discovery_query_id' column missing. Migration needs to be applied."
+            else:
+                response_data["error"] = f"Database error: {str(db_err)}"
+            return response_data
         
         # Convert to response models
+        logger.info(f"🔍 Converting {len(prospects)} prospects to response format...")
         prospect_responses = []
-        for p in prospects:
+        for idx, p in enumerate(prospects):
             try:
                 prospect_responses.append(ProspectResponse.model_validate(p))
             except Exception as e:
-                logger.error(f"🔴 Error validating prospect {p.id}: {e}", exc_info=True)
-                raise
+                logger.error(f"🔴 Error validating prospect {idx+1}/{len(prospects)} (id={getattr(p, 'id', 'unknown')}): {e}", exc_info=True)
+                # Continue processing other prospects instead of failing completely
+                continue
         
-        logger.info(f"✅ Successfully returning {len(prospect_responses)} prospects")
+        logger.info(f"✅ Successfully converted {len(prospect_responses)} prospects")
         
-        return ProspectListResponse(
-            prospects=prospect_responses,
-            total=total,
-            skip=skip,
-            limit=limit
-        )
+        # Build success response
+        response_data["success"] = True
+        response_data["data"] = {
+            "prospects": prospect_responses,
+            "total": total,
+            "skip": skip,
+            "limit": limit
+        }
+        
+        logger.info(f"✅ Returning success response with {len(prospect_responses)} prospects")
+        return response_data
     
+    except HTTPException:
+        # Re-raise HTTPExceptions (they're already properly formatted)
+        raise
     except Exception as err:
-        logger.error(f"🔴 Prospects endpoint error: {err}", exc_info=True)
+        logger.error(f"🔴 Unexpected error in prospects endpoint: {err}", exc_info=True)
         logger.error(f"🔴 Error type: {type(err).__name__}")
         logger.error(f"🔴 Error message: {str(err)}")
         import traceback
         logger.error(f"🔴 Full traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(err)}")
+        response_data["error"] = f"Internal server error: {str(err)}"
+        return response_data
 
 
 @router.get("/{prospect_id}", response_model=ProspectResponse)

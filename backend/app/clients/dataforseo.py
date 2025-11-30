@@ -409,6 +409,11 @@ class DataForSEOClient:
                             
                             parsed_results = []
                             for item in items:
+                                # Defensive check: ensure item is a dict
+                                if not isinstance(item, dict):
+                                    logger.warning(f"⚠️  Skipping invalid item (not a dict): {type(item)}")
+                                    continue
+                                
                                 if item.get("type") == "organic":
                                     parsed_results.append({
                                         "title": item.get("title", ""),

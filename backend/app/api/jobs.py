@@ -268,12 +268,18 @@ async def create_send_job(
     await db.commit()
     await db.refresh(job)
     
-    # TODO: Implement send task in backend/app/tasks/send.py
-    # For now, mark as not implemented
-    logger.warning("Send task not yet implemented in backend")
-    job.status = "failed"
-    job.error_message = "Send task not yet implemented. This feature will be available soon."
-    await db.commit()
+    # Start send task in background
+    try:
+        from app.tasks.send import process_send_job
+        import asyncio
+        asyncio.create_task(process_send_job(str(job.id)))
+        logger.info(f"✅ Send job {job.id} started in background")
+    except Exception as e:
+        logger.error(f"❌ Failed to start send job {job.id}: {e}", exc_info=True)
+        job.status = "failed"
+        job.error_message = f"Failed to start job: {e}"
+        await db.commit()
+        await db.refresh(job)
     
     return job_to_response(job)
 

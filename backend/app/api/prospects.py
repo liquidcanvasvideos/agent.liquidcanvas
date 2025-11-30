@@ -86,16 +86,28 @@ async def create_enrichment_job(
     await db.commit()
     await db.refresh(job)
     
-    # TODO: Implement enrichment task in backend/app/tasks/enrichment.py
-    # For now, mark as not implemented
-    logger.warning("Enrichment task not yet implemented in backend")
-    job.status = "failed"
-    job.error_message = "Enrichment task not yet implemented. This feature will be available soon."
-    await db.commit()
+    # Start enrichment task in background
+    try:
+        from app.tasks.enrichment import process_enrichment_job
+        import asyncio
+        asyncio.create_task(process_enrichment_job(str(job.id)))
+        logger.info(f"✅ Enrichment job {job.id} started in background")
+    except Exception as e:
+        logger.error(f"❌ Failed to start enrichment job {job.id}: {e}", exc_info=True)
+        job.status = "failed"
+        job.error_message = f"Failed to start job: {e}"
+        await db.commit()
+        await db.refresh(job)
+        return {
+            "job_id": job.id,
+            "status": "failed",
+            "error": str(e)
+        }
+    
     return {
         "job_id": job.id,
-        "status": "failed",
-        "message": "Enrichment task not yet implemented. This feature will be available soon."
+        "status": "pending",
+        "message": f"Enrichment job {job.id} started successfully"
     }
 
 

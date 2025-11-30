@@ -344,12 +344,37 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
                             title = result_item.get("title") or ""
                             title = title[:500] if title else ""
                             
+                            # OPTIONAL: Try to extract email immediately using Hunter.io
+                            # This is optional - if it fails, enrichment job will handle it later
+                            contact_email = None
+                            hunter_payload = None
+                            
+                            try:
+                                from app.clients.hunter import HunterIOClient
+                                hunter_client = HunterIOClient()
+                                hunter_result = await hunter_client.domain_search(domain)
+                                
+                                if hunter_result.get("success") and hunter_result.get("emails"):
+                                    emails = hunter_result["emails"]
+                                    if emails and len(emails) > 0:
+                                        first_email = emails[0]
+                                        email_value = first_email.get("value")
+                                        if email_value:
+                                            contact_email = email_value
+                                            hunter_payload = hunter_result
+                                            logger.info(f"📧 Found email during discovery for {domain}: {email_value}")
+                            except Exception as e:
+                                # Don't fail discovery if Hunter.io fails - enrichment will handle it
+                                logger.debug(f"⚠️  Could not extract email during discovery for {domain}: {e}")
+                            
                             prospect = Prospect(
                                 domain=domain,
                                 page_url=normalized_url,
                                 page_title=title,
+                                contact_email=contact_email,  # May be None, enrichment will fix
                                 outreach_status="pending",
                                 discovery_query_id=discovery_query.id,  # Link to discovery query
+                                hunter_payload=hunter_payload,  # May be None
                                 dataforseo_payload={
                                     "description": description,
                                     "location": loc,
@@ -370,7 +395,8 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
                             # Safely get title for logging
                             log_title = result_item.get("title") or ""
                             log_title = log_title[:50] if log_title else "No title"
-                            logger.info(f"💾 Saved new prospect: {domain} - {log_title}")
+                            email_status = f" (email: {contact_email})" if contact_email else " (no email)"
+                            logger.info(f"💾 Saved new prospect: {domain} - {log_title}{email_status}")
                         
                         search_stats["queries_detail"].append(query_stats)
                         
@@ -423,6 +449,32 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
             logger.info(f"   📊 Queries: {search_stats['queries_executed']} executed, {search_stats['queries_successful']} successful, {search_stats['queries_failed']} failed")
             logger.info(f"   🔍 Results: {search_stats['total_results_found']} found, {search_stats['results_saved']} saved")
             logger.info(f"   ⏭️  Skipped: {search_stats['results_skipped_duplicate']} duplicates, {search_stats['results_skipped_existing']} existing")
+            
+            # Auto-trigger enrichment if prospects were discovered
+            if len(all_prospects) > 0:
+                try:
+                    from app.tasks.enrichment import process_enrichment_job
+                    import asyncio
+                    
+                    # Create enrichment job
+                    enrichment_job = Job(
+                        job_type="enrich",
+                        params={
+                            "prospect_ids": None,  # Enrich all newly discovered
+                            "max_prospects": len(all_prospects)
+                        },
+                        status="pending"
+                    )
+                    db.add(enrichment_job)
+                    await db.commit()
+                    await db.refresh(enrichment_job)
+                    
+                    # Start enrichment in background
+                    asyncio.create_task(process_enrichment_job(str(enrichment_job.id)))
+                    logger.info(f"🔄 Auto-triggered enrichment job {enrichment_job.id} for {len(all_prospects)} prospects")
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to auto-trigger enrichment: {e}")
+                    # Don't fail discovery job if enrichment trigger fails
             
             return {
                 "job_id": job_id,

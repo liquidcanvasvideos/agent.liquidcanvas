@@ -48,17 +48,22 @@ class HunterIOClient:
         Returns:
             Dictionary with email results
         """
+        # Hunter free / lower plans often cap results to 10 emails; requesting
+        # more can trigger a pagination_error (HTTP 400). To keep enrichment
+        # working reliably, we clamp the limit to 10 here.
+        effective_limit = max(1, min(int(limit or 10), 10))
+
         url = f"{self.BASE_URL}/domain-search"
         
         params = {
             "domain": domain,
             "api_key": self.api_key,
-            "limit": limit
+            "limit": effective_limit,
         }
         
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                logger.info(f"Calling Hunter.io API for domain: {domain}")
+                logger.info(f"Calling Hunter.io API for domain: {domain} (limit={effective_limit})")
                 response = await client.get(url, params=params)
                 response.raise_for_status()
                 result = response.json()

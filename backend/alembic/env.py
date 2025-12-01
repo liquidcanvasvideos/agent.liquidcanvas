@@ -51,21 +51,16 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    from sqlalchemy import create_engine
+    
+    # Use sync engine for migrations (Alembic doesn't work well with async)
+    database_url = config.get_main_option("sqlalchemy.url")
+    connectable = create_engine(database_url, poolclass=pool.NullPool)
 
-    async def do_run_migrations(connection: Connection) -> None:
+    with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
-
-    async with connectable.connect() as connection:
-        do_run_migrations(connection)
-
-    connectable.sync_engine.dispose()
 
 
 if context.is_offline_mode():

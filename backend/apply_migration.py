@@ -9,8 +9,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Set environment if .env exists
-from dotenv import load_dotenv
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass  # Continue without .env if it has issues
 
 # Run migration
 if __name__ == "__main__":

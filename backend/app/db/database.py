@@ -5,9 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.orm import declarative_base
 from typing import AsyncGenerator
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass  # Continue without .env if it has issues
 import logging
 
 logger = logging.getLogger(__name__)

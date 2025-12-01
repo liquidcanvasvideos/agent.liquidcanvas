@@ -6,8 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from typing import List, Optional
 from uuid import UUID
-import redis
-from rq import Queue
 import os
 from dotenv import load_dotenv
 import logging
@@ -30,33 +28,6 @@ from app.schemas.prospect import (
 load_dotenv()
 
 router = APIRouter()
-
-# Redis connection for RQ - lazy initialization
-_redis_conn = None
-_queues = {}
-
-def get_redis_connection():
-    """Get or create Redis connection (lazy initialization)"""
-    global _redis_conn
-    if _redis_conn is None:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        try:
-            _redis_conn = redis.from_url(redis_url, socket_connect_timeout=2, socket_timeout=2)
-            # Test connection
-            _redis_conn.ping()
-        except Exception as e:
-            logger.warning(f"Redis connection failed: {e}. Queue operations will be disabled.")
-            _redis_conn = None
-    return _redis_conn
-
-def get_queue(name: str):
-    """Get or create a queue (lazy initialization)"""
-    if name not in _queues:
-        conn = get_redis_connection()
-        if conn is None:
-            return None
-        _queues[name] = Queue(name, connection=conn)
-    return _queues.get(name)
 
 
 @router.post("/enrich/direct")
@@ -398,8 +369,9 @@ async def compose_email(
     try:
         from app.clients.gemini import GeminiClient
         client = GeminiClient()
-    except ImportError:
-        raise HTTPException(status_code=500, detail="Worker clients not available. Ensure worker service is running.")
+    except ImportError as e:
+        logger.error(f"Failed to import GeminiClient: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Gemini client not available: {str(e)}")
     except ValueError as e:
         raise HTTPException(status_code=500, detail=f"Gemini API not configured: {str(e)}")
     
@@ -491,8 +463,9 @@ async def send_email(
     try:
         from app.clients.gmail import GmailClient
         gmail_client = GmailClient()
-    except ImportError:
-        raise HTTPException(status_code=500, detail="Worker clients not available. Ensure worker service is running.")
+    except ImportError as e:
+        logger.error(f"Failed to import GmailClient: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Gmail client not available: {str(e)}")
     except ValueError as e:
         raise HTTPException(status_code=500, detail=f"Gmail not configured: {str(e)}")
     

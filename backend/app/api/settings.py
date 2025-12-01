@@ -272,10 +272,11 @@ async def test_service(service_name: str):
             raise HTTPException(status_code=404, detail=f"Service '{service_name}' not found")
     
     except ImportError as e:
+        logger.error(f"Failed to import service client: {e}", exc_info=True)
         return {
             "success": False,
             "status": "error",
-            "message": f"Worker service not available: {str(e)}"
+            "message": f"Service client not available: {str(e)}"
         }
     except Exception as e:
         logger.error(f"Error testing {service_name}: {e}", exc_info=True)

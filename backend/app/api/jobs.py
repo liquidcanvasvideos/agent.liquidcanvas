@@ -7,8 +7,6 @@ from sqlalchemy import select
 from sqlalchemy import inspect as sqlalchemy_inspect
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-import redis
-from rq import Queue
 import os
 from dotenv import load_dotenv
 import logging
@@ -23,33 +21,6 @@ from app.api.auth import get_current_user  # Import auth dependency
 load_dotenv()
 
 router = APIRouter()
-
-# Redis connection for RQ - lazy initialization
-_redis_conn = None
-_queues = {}
-
-def get_redis_connection():
-    """Get or create Redis connection (lazy initialization)"""
-    global _redis_conn
-    if _redis_conn is None:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        try:
-            _redis_conn = redis.from_url(redis_url, socket_connect_timeout=2, socket_timeout=2)
-            # Test connection
-            _redis_conn.ping()
-        except Exception as e:
-            logger.warning(f"Redis connection failed: {e}. Queue operations will be disabled.")
-            _redis_conn = None
-    return _redis_conn
-
-def get_queue(name: str):
-    """Get or create a queue (lazy initialization)"""
-    if name not in _queues:
-        conn = get_redis_connection()
-        if conn is None:
-            return None
-        _queues[name] = Queue(name, connection=conn)
-    return _queues.get(name)
 
 
 def job_to_response(job: Job) -> JobResponse:

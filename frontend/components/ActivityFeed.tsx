@@ -51,20 +51,23 @@ export default function ActivityFeed({ limit = 20, autoRefresh = false }: Activi
         <p className="text-gray-500 text-sm">No recent activity</p>
       ) : (
         <div className="space-y-2 max-h-96 overflow-y-auto">
-          {activities.map((activity) => (
+          {/* Safe array mapping - prevents crash if activities is undefined or not an array */}
+          {Array.isArray(activities) && activities.length > 0 ? activities.map((activity) => (
             <div
-              key={activity.id}
+              key={activity?.id || Math.random()}
               className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
             >
               <div className="w-2 h-2 bg-olive-600 rounded-full mt-2"></div>
               <div className="flex-1">
-                <p className="text-sm text-gray-900">{activity.message}</p>
+                <p className="text-sm text-gray-900">{activity?.message || 'No message'}</p>
                 <p className="text-xs text-gray-500 mt-1">
-                  {new Date(activity.timestamp).toLocaleString()}
+                  {activity?.timestamp ? new Date(activity.timestamp).toLocaleString() : 'Unknown time'}
                 </p>
               </div>
             </div>
-          ))}
+          )) : (
+            <p className="text-gray-500 text-sm">No activities to display</p>
+          )}
         </div>
       )}
     </div>

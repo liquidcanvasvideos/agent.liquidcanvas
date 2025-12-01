@@ -9,9 +9,17 @@ interface SystemStatusProps {
 }
 
 export default function SystemStatus({ jobs, loading }: SystemStatusProps) {
-  const runningJobs = jobs.filter(j => j.status === 'running')
-  const completedJobs = jobs.filter(j => j.status === 'completed')
-  const failedJobs = jobs.filter(j => j.status === 'failed')
+  // Safe array filtering with defensive checks
+  // Prevents crashes if jobs is undefined or not an array
+  const runningJobs = Array.isArray(jobs) 
+    ? jobs.filter(j => j && typeof j === 'object' && j.status === 'running')
+    : []
+  const completedJobs = Array.isArray(jobs)
+    ? jobs.filter(j => j && typeof j === 'object' && j.status === 'completed')
+    : []
+  const failedJobs = Array.isArray(jobs)
+    ? jobs.filter(j => j && typeof j === 'object' && j.status === 'failed')
+    : []
 
   return (
     <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md border-2 border-gray-200/60 p-3">

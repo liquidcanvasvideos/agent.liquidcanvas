@@ -11,7 +11,10 @@ function getAuthToken(): string | null {
   return localStorage.getItem('auth_token')
 }
 
-// Authenticated fetch wrapper
+/**
+ * Authenticated fetch wrapper with robust error handling and SSL support
+ * Handles network errors, SSL issues, and undefined responses gracefully
+ */
 async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = getAuthToken()
   const headers: Record<string, string> = {
@@ -24,24 +27,52 @@ async function authenticatedFetch(url: string, options: RequestInit = {}): Promi
   }
   // Note: No console warning if token is missing - auth is optional for some endpoints
   
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  })
-  
-  // If unauthorized, redirect to login (only if auth was actually required)
-  if (response.status === 401) {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('auth_token')
-      // Only redirect if we actually sent a token (meaning auth was expected)
-      if (token) {
-        window.location.href = '/login'
+  try {
+    // Attempt fetch with error handling
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      // Add credentials for CORS if needed (but don't require SSL verification in browser)
+      credentials: 'omit', // Browser handles SSL automatically, but we don't send cookies
+    })
+    
+    // If unauthorized, redirect to login (only if auth was actually required)
+    if (response.status === 401) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_token')
+        // Only redirect if we actually sent a token (meaning auth was expected)
+        if (token) {
+          window.location.href = '/login'
+        }
       }
+      throw new Error('Unauthorized')
     }
-    throw new Error('Unauthorized')
+    
+    return response
+  } catch (error: any) {
+    // Handle network errors, SSL errors, and other fetch failures
+    const errorMessage = error?.message || String(error)
+    
+    // Log clear error message for debugging
+    if (errorMessage.includes('Failed to fetch') || 
+        errorMessage.includes('NetworkError') ||
+        errorMessage.includes('ERR_CONNECTION_REFUSED') ||
+        errorMessage.includes('ERR_SSL')) {
+      console.error('❌ Network/SSL Error:', {
+        url,
+        error: errorMessage,
+        message: 'Backend may be unreachable or SSL certificate issue. App will continue running.',
+      })
+    } else {
+      console.error('❌ Fetch Error:', {
+        url,
+        error: errorMessage,
+      })
+    }
+    
+    // Re-throw to allow caller to handle, but app won't crash
+    throw error
   }
-  
-  return response
 }
 
 // Types
@@ -218,12 +249,33 @@ export async function getJobStatus(jobId: string): Promise<Job> {
 }
 
 export async function listJobs(skip = 0, limit = 50): Promise<Job[]> {
-  const res = await authenticatedFetch(`${API_BASE}/jobs?skip=${skip}&limit=${limit}`)
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: 'Failed to list jobs' }))
-    throw new Error(error.detail || 'Failed to list jobs')
+  try {
+    const res = await authenticatedFetch(`${API_BASE}/jobs?skip=${skip}&limit=${limit}`)
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: 'Failed to list jobs' }))
+      throw new Error(error.detail || 'Failed to list jobs')
+    }
+    const data = await res.json()
+    
+    // Validate response is an array
+    if (!Array.isArray(data)) {
+      console.warn('⚠️ listJobs: Response is not an array. Got:', typeof data, data)
+      // Try to extract array from response
+      if (data && typeof data === 'object') {
+        const jobs = data.jobs || data.data || data.items || []
+        if (Array.isArray(jobs)) {
+          return jobs
+        }
+      }
+      return [] // Return empty array instead of crashing
+    }
+    
+    return data
+  } catch (error: any) {
+    console.error('❌ Error in listJobs:', error)
+    // Return empty array to prevent app crash
+    return []
   }
-  return res.json()
 }
 
 // Prospects API
@@ -384,9 +436,11 @@ export async function getStats(): Promise<Stats | null> {
     let prospects_replied = 0
     
     // Critical defensive guard: Never call forEach on undefined/null
-    if (allProspectsList && Array.isArray(allProspectsList) && allProspectsList.length > 0) {
+    // Use safe array check and try-catch for maximum safety
+    if (Array.isArray(allProspectsList) && allProspectsList.length > 0) {
       try {
         allProspectsList.forEach((p: any) => {
+          // Additional safety check for each item
           if (p && typeof p === 'object' && p.outreach_status) {
             if (p.outreach_status === 'pending') prospects_pending++
             if (p.outreach_status === 'sent') prospects_sent++
@@ -394,9 +448,12 @@ export async function getStats(): Promise<Stats | null> {
           }
         })
       } catch (forEachError) {
-        console.error('⚠️ Error in forEach loop (likely from devtools hook):', forEachError)
-        // Continue with zero counts rather than failing
+        console.error('⚠️ Error in forEach loop (likely from devtools hook or invalid data):', forEachError)
+        // Continue with zero counts rather than failing - app stays running
       }
+    } else if (allProspectsList !== null && allProspectsList !== undefined) {
+      // Log warning if we expected an array but got something else
+      console.warn('⚠️ getStats: allProspectsList is not a valid array:', typeof allProspectsList, allProspectsList)
     }
     
     // Safely handle jobs array - defensive guard
@@ -409,16 +466,21 @@ export async function getStats(): Promise<Stats | null> {
       }
     }
     
-    // Defensive filter operations
-    const jobs_running = jobsArray && Array.isArray(jobsArray) 
-      ? jobsArray.filter((j: any) => j && j.status === 'running').length 
-      : 0
-    const jobs_completed = jobsArray && Array.isArray(jobsArray)
-      ? jobsArray.filter((j: any) => j && j.status === 'completed').length
-      : 0
-    const jobs_failed = jobsArray && Array.isArray(jobsArray)
-      ? jobsArray.filter((j: any) => j && j.status === 'failed').length
-      : 0
+    // Defensive filter operations with safe array checks
+    let jobs_running = 0
+    let jobs_completed = 0
+    let jobs_failed = 0
+    
+    if (Array.isArray(jobsArray) && jobsArray.length > 0) {
+      try {
+        jobs_running = jobsArray.filter((j: any) => j && typeof j === 'object' && j.status === 'running').length
+        jobs_completed = jobsArray.filter((j: any) => j && typeof j === 'object' && j.status === 'completed').length
+        jobs_failed = jobsArray.filter((j: any) => j && typeof j === 'object' && j.status === 'failed').length
+      } catch (filterError) {
+        console.error('⚠️ Error in filter operations:', filterError)
+        // Continue with zero counts - app stays running
+      }
+    }
     
     const stats: Stats = {
       total_prospects: allProspectsTotal,

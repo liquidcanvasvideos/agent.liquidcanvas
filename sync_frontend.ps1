@@ -30,6 +30,12 @@ Write-Host "Source: $monorepoFrontend" -ForegroundColor Gray
 Write-Host "Destination: $separateRepo" -ForegroundColor Gray
 Write-Host ""
 
+# Remove existing directories first to prevent nesting
+Write-Host "Cleaning existing directories..." -ForegroundColor Yellow
+if (Test-Path "$separateRepo\app") { Remove-Item -Path "$separateRepo\app" -Recurse -Force }
+if (Test-Path "$separateRepo\components") { Remove-Item -Path "$separateRepo\components" -Recurse -Force }
+if (Test-Path "$separateRepo\lib") { Remove-Item -Path "$separateRepo\lib" -Recurse -Force }
+
 # Copy directories
 Write-Host "Copying app/..." -ForegroundColor Yellow
 Copy-Item -Path "$monorepoFrontend\app" -Destination "$separateRepo\app" -Recurse -Force

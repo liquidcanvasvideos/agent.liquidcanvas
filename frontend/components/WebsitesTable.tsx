@@ -16,7 +16,7 @@ export default function WebsitesTable() {
     try {
       setLoading(true)
       const response = await listProspects(skip, limit)
-      setProspects(response.prospects)
+      setProspects(response.data)
       setTotal(response.total)
     } catch (error) {
       console.error('Failed to load websites:', error)

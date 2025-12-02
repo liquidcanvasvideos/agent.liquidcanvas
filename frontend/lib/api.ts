@@ -155,12 +155,14 @@ export interface EmailLog {
   sent_at: string
 }
 
-export interface ProspectListResponse {
-  prospects: Prospect[]
+export interface PaginatedResponse<T> {
+  data: T[]
   total: number
   skip: number
   limit: number
 }
+
+export type ProspectListResponse = PaginatedResponse<Prospect>
 
 // Jobs API
 /**
@@ -501,21 +503,15 @@ export async function listProspects(
     const error = await res.json().catch(() => ({ detail: 'Failed to list prospects' }))
     throw new Error(error.detail || 'Failed to list prospects')
   }
-  const response = await res.json()
-  
-  // Handle new response format: {success: bool, data: {prospects, total, skip, limit}, error: null | string}
-  if (response.success && response.data) {
-    return response.data
+  const result: any = await res.json()
+
+  // Normalize to PaginatedResponse<Prospect>
+  return {
+    data: (result.prospects || result.data || []) as Prospect[],
+    total: (result.total ?? 0) as number,
+    skip,
+    limit,
   }
-  
-  // Fallback for old format or error case
-  if (response.error) {
-    throw new Error(response.error)
-  }
-  
-  // If response doesn't match expected format, return empty structure
-  console.warn('Unexpected response format from /api/prospects:', response)
-  return { prospects: [], total: 0, skip: 0, limit: 0 }
 }
 
 export async function getProspect(prospectId: string): Promise<Prospect> {
@@ -585,9 +581,9 @@ export async function getStats(): Promise<Stats | null> {
   try {
     // Fetch all data in parallel with defensive error handling
     const [allProspects, jobs, prospectsWithEmail] = await Promise.all([
-      listProspects(0, 1000).catch(() => ({ prospects: [], total: 0, skip: 0, limit: 0 })),
+      listProspects(0, 1000).catch(() => ({ data: [], total: 0, skip: 0, limit: 0 })),
       listJobs(0, 100).catch(() => []),
-      listProspects(0, 1000, undefined, undefined, true).catch(() => ({ prospects: [], total: 0, skip: 0, limit: 0 })),
+      listProspects(0, 1000, undefined, undefined, true).catch(() => ({ data: [], total: 0, skip: 0, limit: 0 })),
     ])
     
     // Log actual API responses for debugging (only in development)
@@ -603,32 +599,13 @@ export async function getStats(): Promise<Stats | null> {
       return null
     }
     
-    // Safely extract prospects array with multiple fallbacks
-    let allProspectsList: any[] = []
-    if (allProspects) {
-      if (Array.isArray(allProspects.prospects)) {
-        allProspectsList = allProspects.prospects
-      } else if (allProspects.data && Array.isArray(allProspects.data.prospects)) {
-        allProspectsList = allProspects.data.prospects
-      } else if (Array.isArray(allProspects)) {
-        allProspectsList = allProspects
-      }
-    }
+    // Extract prospects array from PaginatedResponse<Prospect> format
+    const allProspectsList: Prospect[] = allProspects?.data || []
+    const prospectsWithEmailList: Prospect[] = prospectsWithEmail?.data || []
     
-    let prospectsWithEmailList: any[] = []
-    if (prospectsWithEmail) {
-      if (Array.isArray(prospectsWithEmail.prospects)) {
-        prospectsWithEmailList = prospectsWithEmail.prospects
-      } else if (prospectsWithEmail.data && Array.isArray(prospectsWithEmail.data.prospects)) {
-        prospectsWithEmailList = prospectsWithEmail.data.prospects
-      } else if (Array.isArray(prospectsWithEmail)) {
-        prospectsWithEmailList = prospectsWithEmail
-      }
-    }
-    
-    // Safely extract totals with defensive checks
-    const allProspectsTotal = (allProspects?.total ?? allProspects?.data?.total ?? 0) || 0
-    const prospectsWithEmailTotal = (prospectsWithEmail?.total ?? prospectsWithEmail?.data?.total ?? 0) || 0
+    // Extract totals from PaginatedResponse<Prospect> format
+    const allProspectsTotal = allProspects?.total ?? 0
+    const prospectsWithEmailTotal = prospectsWithEmail?.total ?? 0
     
     // Count prospects by status - defensive forEach guard
     let prospects_pending = 0

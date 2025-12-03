@@ -128,9 +128,25 @@ async def process_enrichment_job(job_id: str) -> Dict[str, Any]:
                     logger.info(f"🔍 [ENRICHMENT] [{idx}/{len(prospects)}] Starting enrichment for {domain} (id: {prospect_id})")
                     logger.info(f"📥 [ENRICHMENT] Input - domain: {domain}, prospect_id: {prospect_id}")
                     
-                    # Call Hunter.io with error handling
+                    # Call enrichment service (which handles Hunter.io + local scraping)
                     try:
-                        hunter_result = await hunter_client.domain_search(domain)
+                        from app.services.enrichment import enrich_prospect_email
+                        enrich_result = await enrich_prospect_email(domain, None, prospect.page_url)
+                        
+                        # Convert enrichment result to hunter_result format for compatibility
+                        if enrich_result and enrich_result.get("email"):
+                            hunter_result = {
+                                "success": True,
+                                "emails": [{
+                                    "value": enrich_result["email"],
+                                    "confidence_score": enrich_result.get("confidence", 50.0),
+                                    "first_name": None,
+                                    "last_name": None,
+                                    "company": enrich_result.get("company")
+                                }]
+                            }
+                        else:
+                            hunter_result = {"success": False, "emails": []}
                         hunter_time = (time.time() - prospect_start_time) * 1000
                         logger.info(f"⏱️  [ENRICHMENT] Hunter.io API call completed in {hunter_time:.0f}ms")
                     except Exception as hunter_err:

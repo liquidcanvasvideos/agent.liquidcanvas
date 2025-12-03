@@ -31,28 +31,59 @@ logger = logging.getLogger(__name__)
 
 def _extract_emails_from_html(html_content: str) -> list[str]:
     """
-    Extract email addresses from HTML content using regex.
-    Simple fallback when Hunter.io fails.
+    Extract email addresses from HTML content using multiple methods.
+    Handles obfuscated emails and various formats.
     """
     emails = set()
     
-    # Standard email regex
+    # Method 1: Standard email regex
     email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
-    
-    # Extract from text
     found_emails = email_pattern.findall(html_content)
     emails.update(found_emails)
+    
+    # Method 2: Extract from href="mailto:" links
+    mailto_pattern = re.compile(r'mailto:([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})', re.IGNORECASE)
+    mailto_matches = mailto_pattern.findall(html_content)
+    emails.update(mailto_matches)
+    
+    # Method 3: Decode HTML entities (e.g., &#64; for @, &#46; for .)
+    import html
+    decoded_html = html.unescape(html_content)
+    decoded_emails = email_pattern.findall(decoded_html)
+    emails.update(decoded_emails)
+    
+    # Method 4: Handle obfuscated emails (e.g., "contact at domain dot com")
+    obfuscated_pattern = re.compile(
+        r'([a-z0-9._%+-]+)\s*(?:at|@|\[at\]|\(at\))\s*([a-z0-9.-]+)\s*(?:dot|\.|\[dot\]|\(dot\))\s*([a-z]{2,})',
+        re.IGNORECASE
+    )
+    obfuscated_matches = obfuscated_pattern.findall(html_content)
+    for match in obfuscated_matches:
+        if len(match) == 3:
+            email = f"{match[0]}@{match[1]}.{match[2]}"
+            emails.add(email.lower())
     
     # Filter out common false positives
     filtered = []
     for email in emails:
-        email_lower = email.lower()
-        # Skip common false positives
-        if any(skip in email_lower for skip in ['example.com', 'test@', 'noreply', 'no-reply', '@sentry', '@wix']):
+        email_lower = email.lower().strip()
+        # Skip invalid or common false positives
+        if not email_lower or '@' not in email_lower:
             continue
-        filtered.append(email)
+        if any(skip in email_lower for skip in [
+            'example.com', 'test@', 'noreply', 'no-reply', '@sentry', '@wix',
+            'email@email.com', 'test@test.com', 'admin@example.com',
+            'your@email.com', 'your.email@', '@domain.com', '@company.com'
+        ]):
+            continue
+        # Must have valid domain structure
+        parts = email_lower.split('@')
+        if len(parts) != 2 or '.' not in parts[1]:
+            continue
+        filtered.append(email_lower)
     
-    return filtered
+    # Remove duplicates and return
+    return list(set(filtered))
 
 
 async def _scrape_email_from_url(url: str) -> Optional[str]:
@@ -62,21 +93,79 @@ async def _scrape_email_from_url(url: str) -> Optional[str]:
     """
     try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            response = await client.get(url)
+            response = await client.get(url, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            })
             response.raise_for_status()
             html = response.text
             
             emails = _extract_emails_from_html(html)
             if emails:
+                logger.info(f"✅ [SCRAPING] Found {len(emails)} email(s) on {url}: {emails[:3]}")
                 # Return the first email (usually the most relevant)
                 return emails[0]
+            else:
+                logger.debug(f"⚠️  [SCRAPING] No emails found in HTML for {url}")
+    except httpx.HTTPStatusError as e:
+        logger.debug(f"HTTP error scraping {url}: {e.response.status_code}")
     except Exception as e:
         logger.debug(f"Local email scraping failed for {url}: {e}")
     
     return None
 
 
-async def enrich_prospect_email(domain: str, name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+async def _scrape_email_from_domain(domain: str, page_url: Optional[str] = None) -> Optional[str]:
+    """
+    Scrape email from a domain by trying multiple common contact page URLs.
+    Returns first valid email found, or None.
+    
+    Tries in order:
+    1. Provided page_url (if available)
+    2. Homepage
+    3. Common contact page paths
+    """
+    urls_to_try = []
+    
+    # Priority 1: Use the page_url from prospect if available
+    if page_url:
+        urls_to_try.append(page_url)
+    
+    # Priority 2: Homepage
+    urls_to_try.append(f"https://{domain}")
+    urls_to_try.append(f"http://{domain}")
+    
+    # Priority 3: Common contact page paths
+    common_paths = [
+        "/contact",
+        "/contact-us",
+        "/contactus",
+        "/get-in-touch",
+        "/getintouch",
+        "/reach-us",
+        "/reachus",
+        "/about",
+        "/about-us",
+        "/aboutus",
+    ]
+    
+    for path in common_paths:
+        urls_to_try.append(f"https://{domain}{path}")
+        urls_to_try.append(f"http://{domain}{path}")
+    
+    logger.info(f"🔍 [SCRAPING] Trying {len(urls_to_try)} URLs for {domain}")
+    
+    # Try each URL until we find an email
+    for url in urls_to_try:
+        email = await _scrape_email_from_url(url)
+        if email:
+            logger.info(f"✅ [SCRAPING] Found email {email} on {url}")
+            return email
+    
+    logger.warning(f"⚠️  [SCRAPING] No emails found after trying {len(urls_to_try)} URLs for {domain}")
+    return None
+
+
+async def enrich_prospect_email(domain: str, name: Optional[str] = None, page_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Enrich a prospect's email using Hunter.io.
 
@@ -119,11 +208,9 @@ async def enrich_prospect_email(domain: str, name: Optional[str] = None) -> Opti
             # Handle rate limit - return special status, DO NOT return None
             if status == "rate_limited":
                 logger.warning(f"⚠️  [ENRICHMENT] Hunter.io rate limited for {domain}")
-                # Try local scraping fallback
+                # Try local scraping fallback - try multiple contact pages
                 try:
-                    # Try to scrape from domain's homepage
-                    homepage_url = f"https://{domain}"
-                    local_email = await _scrape_email_from_url(homepage_url)
+                    local_email = await _scrape_email_from_domain(domain, page_url)
                     if local_email:
                         logger.info(f"✅ [ENRICHMENT] Local scraping found email for {domain}: {local_email}")
                         return {
@@ -168,8 +255,7 @@ async def enrich_prospect_email(domain: str, name: Optional[str] = None) -> Opti
             # For other errors, try local scraping fallback
             logger.warning(f"⚠️  [ENRICHMENT] Hunter.io returned error: {error_msg}, trying local scraping fallback")
             try:
-                homepage_url = f"https://{domain}"
-                local_email = await _scrape_email_from_url(homepage_url)
+                local_email = await _scrape_email_from_domain(domain, page_url)
                 if local_email:
                     logger.info(f"✅ [ENRICHMENT] Local scraping found email for {domain}: {local_email}")
                     return {
@@ -203,10 +289,9 @@ async def enrich_prospect_email(domain: str, name: Optional[str] = None) -> Opti
         emails = hunter_result.get("emails", [])
         if not emails or len(emails) == 0:
             logger.info(f"⚠️  [ENRICHMENT] No emails found for {domain} via Hunter.io, trying local scraping")
-            # Try local scraping fallback
+            # Try local scraping fallback - try multiple contact pages
             try:
-                homepage_url = f"https://{domain}"
-                local_email = await _scrape_email_from_url(homepage_url)
+                local_email = await _scrape_email_from_domain(domain, page_url)
                 if local_email:
                     logger.info(f"✅ [ENRICHMENT] Local scraping found email for {domain}: {local_email}")
                     return {

@@ -376,7 +376,8 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
                             
                             try:
                                 logger.info(f"🔍 [DISCOVERY] Enriching {domain} before saving...")
-                                enrich_result = await enrich_prospect_email(domain)
+                                # Pass page_url to enrichment so it can try that page first
+                                enrich_result = await enrich_prospect_email(domain, None, normalized_url)
                                 
                                 if enrich_result:
                                     enrich_status = enrich_result.get("status")
@@ -392,15 +393,15 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
                                             "retry_needed": True
                                         }
                                     elif enrich_result.get("email"):
-                                        contact_email = enrich_result["email"]
-                                        # Store enrichment metadata
-                                        hunter_payload = {
-                                            "email": contact_email,
-                                            "confidence": enrich_result.get("confidence", 0),
-                                            "source": enrich_result.get("source", "hunter_io")
-                                        }
-                                        logger.info(f"✅ [DISCOVERY] Enriched {domain}: {contact_email}")
-                                    else:
+                                    contact_email = enrich_result["email"]
+                                    # Store enrichment metadata
+                                    hunter_payload = {
+                                        "email": contact_email,
+                                        "confidence": enrich_result.get("confidence", 0),
+                                        "source": enrich_result.get("source", "hunter_io")
+                                    }
+                                    logger.info(f"✅ [DISCOVERY] Enriched {domain}: {contact_email}")
+                                else:
                                         # No email but not rate limited - mark for retry
                                         logger.warning(f"⚠️  [DISCOVERY] No email found for {domain}, marking for retry")
                                         contact_email = None
@@ -441,7 +442,7 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
                             
                             # Save prospect (with or without email - retry will handle missing emails)
                             if contact_email:
-                                logger.info(f"💾 [DISCOVERY] Saving prospect {domain} with email {contact_email}")
+                            logger.info(f"💾 [DISCOVERY] Saving prospect {domain} with email {contact_email}")
                             else:
                                 logger.info(f"💾 [DISCOVERY] Saving prospect {domain} without email (retry pending)")
                             

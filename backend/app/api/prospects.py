@@ -75,7 +75,7 @@ async def enrich_direct(
     try:
         from app.services.enrichment import enrich_prospect_email
         
-        result = await enrich_prospect_email(domain, name)
+        result = await enrich_prospect_email(domain, name, None)
         
         if not result or not result.get("email"):
             api_time = (time.time() - start_time) * 1000
@@ -139,9 +139,9 @@ async def enrich_prospect_by_id(
         if not prospect:
             raise HTTPException(status_code=404, detail="Prospect not found")
         
-        # Enrich using domain
+        # Enrich using domain and page_url (if available)
         from app.services.enrichment import enrich_prospect_email
-        enrich_result = await enrich_prospect_email(prospect.domain)
+        enrich_result = await enrich_prospect_email(prospect.domain, None, prospect.page_url)
         
         if enrich_result and enrich_result.get("email"):
             # Update prospect with email

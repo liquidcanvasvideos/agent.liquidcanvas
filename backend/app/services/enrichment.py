@@ -299,8 +299,26 @@ async def enrich_prospect_email(domain: str, name: Optional[str] = None, page_ur
     no usable email candidate is found.
     """
     start_time = time.time()
-    logger.info(f"🔍 [ENRICHMENT] Starting enrichment for domain: {domain}, name: {name or 'N/A'}")
-    logger.info(f"📥 [ENRICHMENT] Input - domain: {domain}, name: {name}")
+    
+    # Normalize domain first
+    normalized_domain = normalize_domain(domain)
+    if not normalized_domain:
+        error_msg = f"Invalid domain format: {domain}"
+        logger.error(f"❌ [ENRICHMENT] {error_msg}")
+        return {
+            "email": None,
+            "name": None,
+            "company": None,
+            "confidence": 0.0,
+            "domain": domain,
+            "success": False,
+            "source": None,
+            "error": error_msg,
+            "status": "pending_retry",
+        }
+    
+    logger.info(f"🔍 [ENRICHMENT] Starting enrichment for domain: {normalized_domain}, name: {name or 'N/A'}")
+    logger.info(f"📥 [ENRICHMENT] Input - domain: {domain} → normalized: {normalized_domain}, name: {name}")
     
     try:
         # Initialize Hunter client

@@ -327,9 +327,9 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
                                 search_stats["results_skipped_duplicate"] += 1
                                 continue
                             
-                            # Parse and normalize URL (defensive check)
-                            parsed = urlparse(url)
-                            domain = (parsed.netloc or "").lower().replace("www.", "")
+                            # Parse and normalize URL using utility function
+                            from app.utils.domain import normalize_domain
+                            domain = normalize_domain(url)
                             if not domain:
                                 search_stats["results_skipped_duplicate"] += 1
                                 logger.warning(f"⏭️  Skipping invalid URL (no domain): {url}")

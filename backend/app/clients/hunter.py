@@ -72,18 +72,24 @@ class HunterIOClient:
                     emails = result["data"].get("emails", [])
                     logger.info(f"Hunter.io found {len(emails)} email(s) for {domain}")
                     
-                    # Format emails
+                    # Parse emails correctly - extract ONLY: value, type, confidence_score
                     formatted_emails = []
                     for email in emails:
+                        if not isinstance(email, dict):
+                            continue
+                        
+                        # Extract ONLY the required fields as specified
+                        email_value = email.get("value")
+                        email_type = email.get("type", "")
+                        confidence_score = float(email.get("confidence_score", 0) or 0)
+                        
+                        if not email_value:
+                            continue
+                        
                         formatted_emails.append({
-                            "value": email.get("value", ""),
-                            "type": email.get("type", ""),  # generic, personal, etc.
-                            "confidence_score": email.get("confidence_score", 0),
-                            "sources": email.get("sources", []),
-                            "first_name": email.get("first_name"),
-                            "last_name": email.get("last_name"),
-                            "position": email.get("position"),
-                            "company": email.get("company")
+                            "value": email_value,
+                            "type": email_type,
+                            "confidence_score": confidence_score
                         })
                     
                     return {

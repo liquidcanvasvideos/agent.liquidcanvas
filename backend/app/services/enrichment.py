@@ -29,28 +29,44 @@ from app.clients.hunter import HunterIOClient
 logger = logging.getLogger(__name__)
 
 
-def _extract_emails_from_html(html_content: str) -> list[str]:
+def _extract_emails_from_html(html_content: str, domain: Optional[str] = None) -> list[tuple[str, int]]:
     """
     Extract email addresses from HTML content using multiple methods.
     Handles obfuscated emails and various formats.
+    
+    Returns list of (email, priority_score) tuples, sorted by priority (highest first).
+    Priority scoring:
+    - 100: Email from mailto: link AND matches domain
+    - 90: Email from mailto: link
+    - 80: Email matches domain AND is common contact email (info, contact, support, hello, etc.)
+    - 70: Email matches domain
+    - 60: Common contact email (info, contact, support, hello, etc.)
+    - 50: Other valid email
+    - 0: Filtered out (invalid/false positive)
     """
-    emails = set()
+    emails_with_sources = []
     
-    # Method 1: Standard email regex
-    email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
-    found_emails = email_pattern.findall(html_content)
-    emails.update(found_emails)
-    
-    # Method 2: Extract from href="mailto:" links
+    # Method 1: Extract from href="mailto:" links (highest priority)
     mailto_pattern = re.compile(r'mailto:([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})', re.IGNORECASE)
     mailto_matches = mailto_pattern.findall(html_content)
-    emails.update(mailto_matches)
+    for email in mailto_matches:
+        email_lower = email.lower().strip()
+        if email_lower:
+            # Check if matches domain
+            priority = 90
+            if domain and domain.lower() in email_lower:
+                priority = 100  # Mailto + domain match = highest priority
+            emails_with_sources.append((email_lower, priority, 'mailto'))
+    
+    # Method 2: Standard email regex
+    email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
+    found_emails = email_pattern.findall(html_content)
     
     # Method 3: Decode HTML entities (e.g., &#64; for @, &#46; for .)
     import html
     decoded_html = html.unescape(html_content)
     decoded_emails = email_pattern.findall(decoded_html)
-    emails.update(decoded_emails)
+    found_emails.extend(decoded_emails)
     
     # Method 4: Handle obfuscated emails (e.g., "contact at domain dot com")
     obfuscated_pattern = re.compile(
@@ -61,35 +77,90 @@ def _extract_emails_from_html(html_content: str) -> list[str]:
     for match in obfuscated_matches:
         if len(match) == 3:
             email = f"{match[0]}@{match[1]}.{match[2]}"
-            emails.add(email.lower())
+            found_emails.append(email.lower())
     
-    # Filter out common false positives
-    filtered = []
-    for email in emails:
+    # Common contact email prefixes (higher priority)
+    common_contact_prefixes = ['info', 'contact', 'support', 'hello', 'hi', 'sales', 'help', 'inquiry', 'enquiry', 'admin', 'team']
+    
+    # Process and score all found emails
+    seen_emails = set()
+    for email in found_emails:
         email_lower = email.lower().strip()
-        # Skip invalid or common false positives
+        
+        # Skip if already processed (from mailto)
+        if email_lower in seen_emails:
+            continue
+        seen_emails.add(email_lower)
+        
+        # Skip invalid emails
         if not email_lower or '@' not in email_lower:
             continue
+        
+        # Filter out obvious false positives
         if any(skip in email_lower for skip in [
             'example.com', 'test@', 'noreply', 'no-reply', '@sentry', '@wix',
             'email@email.com', 'test@test.com', 'admin@example.com',
-            'your@email.com', 'your.email@', '@domain.com', '@company.com'
+            'your@email.com', 'your.email@', '@domain.com', '@company.com',
+            '@a.', '@a.price', '@a.com'  # Filter out partial matches like "kd@a.price"
         ]):
             continue
+        
         # Must have valid domain structure
         parts = email_lower.split('@')
         if len(parts) != 2 or '.' not in parts[1]:
             continue
-        filtered.append(email_lower)
+        
+        # Check for suspicious patterns (very short domains, single character domains)
+        domain_part = parts[1]
+        if len(domain_part) < 4 or domain_part.count('.') == 0:
+            continue
+        
+        # Skip emails with very short local parts (likely false positives)
+        if len(parts[0]) < 2:
+            continue
+        
+        # Calculate priority score
+        priority = 50  # Default priority
+        local_part = parts[0]
+        email_domain = domain_part
+        
+        # Check if email domain matches the website domain
+        if domain:
+            domain_lower = domain.lower().replace('www.', '')
+            if domain_lower in email_domain or email_domain in domain_lower:
+                priority = 70  # Domain match
+                # Check if it's also a common contact email
+                if any(prefix in local_part for prefix in common_contact_prefixes):
+                    priority = 80  # Domain match + common contact email
+            else:
+                # Email domain doesn't match website domain - lower priority but still valid
+                # Only include if it's a common contact email
+                if any(prefix in local_part for prefix in common_contact_prefixes):
+                    priority = 60  # Common contact email but different domain
+                else:
+                    # Different domain and not a common contact email - likely false positive
+                    continue
+        
+        emails_with_sources.append((email_lower, priority, 'html'))
     
-    # Remove duplicates and return
-    return list(set(filtered))
+    # Sort by priority (highest first), then remove duplicates keeping highest priority
+    emails_with_sources.sort(key=lambda x: x[1], reverse=True)
+    
+    # Remove duplicates, keeping highest priority version
+    seen = set()
+    filtered = []
+    for email, priority, source in emails_with_sources:
+        if email not in seen:
+            seen.add(email)
+            filtered.append((email, priority))
+    
+    return filtered
 
 
-async def _scrape_email_from_url(url: str) -> Optional[str]:
+async def _scrape_email_from_url(url: str, domain: Optional[str] = None) -> Optional[str]:
     """
     Scrape email from a website URL using local HTML parsing.
-    Returns first valid email found, or None.
+    Returns the best email found (highest priority), or None.
     """
     try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
@@ -99,13 +170,25 @@ async def _scrape_email_from_url(url: str) -> Optional[str]:
             response.raise_for_status()
             html = response.text
             
-            emails = _extract_emails_from_html(html)
-            if emails:
-                logger.info(f"✅ [SCRAPING] Found {len(emails)} email(s) on {url}: {emails[:3]}")
-                # Return the first email (usually the most relevant)
-                return emails[0]
+            # Extract domain from URL if not provided
+            if not domain:
+                try:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(url)
+                    domain = parsed.netloc.replace('www.', '')
+                except:
+                    pass
+            
+            emails_with_priority = _extract_emails_from_html(html, domain)
+            if emails_with_priority:
+                # Get the highest priority email
+                best_email, best_priority = emails_with_priority[0]
+                logger.info(f"✅ [SCRAPING] Found {len(emails_with_priority)} email(s) on {url}. Best: {best_email} (priority: {best_priority})")
+                if len(emails_with_priority) > 1:
+                    logger.debug(f"   Other emails found: {[e[0] for e in emails_with_priority[1:3]]}")
+                return best_email
             else:
-                logger.debug(f"⚠️  [SCRAPING] No emails found in HTML for {url}")
+                logger.debug(f"⚠️  [SCRAPING] No valid emails found in HTML for {url}")
     except httpx.HTTPStatusError as e:
         logger.debug(f"HTTP error scraping {url}: {e.response.status_code}")
     except Exception as e:
@@ -156,7 +239,7 @@ async def _scrape_email_from_domain(domain: str, page_url: Optional[str] = None)
     
     # Try each URL until we find an email
     for url in urls_to_try:
-        email = await _scrape_email_from_url(url)
+        email = await _scrape_email_from_url(url, domain)
         if email:
             logger.info(f"✅ [SCRAPING] Found email {email} on {url}")
             return email

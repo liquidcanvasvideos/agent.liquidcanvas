@@ -12,7 +12,9 @@ from app.db.database import AsyncSessionLocal
 from app.models.prospect import Prospect
 from app.models.job import Job
 from app.clients.hunter import HunterIOClient
-from app.utils.email_validation import is_plausible_email
+from app.utils.email_validation import is_plausible_email, format_job_error
+from app.services.exceptions import RateLimitError
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 

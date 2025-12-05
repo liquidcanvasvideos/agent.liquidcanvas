@@ -184,7 +184,10 @@ async def enrich_prospect_by_id(
     except Exception as e:
         await db.rollback()
         logger.error(f"❌ Error enriching prospect {prospect_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to enrich prospect: {str(e)}")
+        from app.utils.email_validation import format_job_error
+        error_msg = format_job_error(e)
+        logger.error(f"❌ [ENRICHMENT API] Failed to enrich prospect {prospect_id}: {error_msg}")
+        raise HTTPException(status_code=500, detail=f"Failed to enrich prospect: {error_msg}")
 
 
 @router.post("/enrich")

@@ -193,7 +193,8 @@ async def process_enrichment_job(job_id: str) -> Dict[str, Any]:
                     if hunter_result.get("success") and hunter_result.get("emails"):
                         emails = hunter_result["emails"]
                         if emails and len(emails) > 0:
-                            # Get best email (highest confidence)
+                            # Get best email (highest confidence) - filter out garbage
+                            from app.utils.email_validation import is_plausible_email
                             best_email = None
                             best_confidence: float = 0
                             for email_data in emails:

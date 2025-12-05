@@ -168,8 +168,34 @@ async def create_discovery_job(
         
         # Process job directly in backend (free tier compatible - no separate worker needed)
         try:
-            from app.tasks.discovery import process_discovery_job
             import asyncio
+            # Import inside function to catch syntax errors early
+            try:
+                from app.tasks.discovery import process_discovery_job
+            except SyntaxError as syntax_err:
+                logger.error(f"❌ Syntax error in discovery task module: {syntax_err}", exc_info=True)
+                job.status = "failed"
+                job.error_message = "Internal discovery code syntax error. The development team must fix and redeploy."
+                await db.commit()
+                await db.refresh(job)
+                return {
+                    "success": False,
+                    "error": "Discovery is temporarily unavailable due to an internal code issue.",
+                    "status_code": 500,
+                    "job_id": str(job.id)
+                }
+            except ImportError as import_err:
+                logger.error(f"❌ Import error for discovery task: {import_err}", exc_info=True)
+                job.status = "failed"
+                job.error_message = "Module import failed. Please contact support."
+                await db.commit()
+                await db.refresh(job)
+                return {
+                    "success": False,
+                    "error": "Unable to import discovery task module. Please contact support.",
+                    "status_code": 500,
+                    "job_id": str(job.id)
+                }
             
             # Start background task to process job
             # This runs asynchronously without blocking the API response
@@ -180,24 +206,26 @@ async def create_discovery_job(
                 # Task creation failed - update job status immediately
                 logger.error(f"Failed to create background task for job {job.id}: {task_error}", exc_info=True)
                 job.status = "failed"
-                job.error_message = f"Failed to create background task: {task_error}"
+                from app.utils.email_validation import format_job_error
+                job.error_message = format_job_error(task_error)
                 await db.commit()
                 await db.refresh(job)
                 return {
                     "success": False,
-                    "error": f"Failed to start background task: {str(task_error)}",
+                    "error": f"Failed to start background task: {format_job_error(task_error)}",
                     "status_code": 500,
                     "job_id": str(job.id)
                 }
         except Exception as e:
             logger.error(f"Failed to start discovery job {job.id}: {e}", exc_info=True)
             job.status = "failed"
-            job.error_message = f"Failed to start job: {e}"
+            from app.utils.email_validation import format_job_error
+            job.error_message = format_job_error(e)
             await db.commit()
             await db.refresh(job)
             return {
                 "success": False,
-                "error": f"Failed to start job: {str(e)}",
+                "error": f"Failed to start job: {format_job_error(e)}",
                 "status_code": 500,
                 "job_id": str(job.id)
             }

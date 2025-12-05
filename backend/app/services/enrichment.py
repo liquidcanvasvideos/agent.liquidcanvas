@@ -26,6 +26,7 @@ import httpx
 from typing import Optional, Dict, Any, List
 from app.clients.hunter import HunterIOClient
 from app.utils.domain import normalize_domain, validate_domain
+from app.utils.email_validation import is_plausible_email
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ def _extract_emails_from_html(html_content: str, domain: Optional[str] = None) -
     found_emails.extend(decoded_emails)
     
     # Method 4: Handle obfuscated emails (e.g., "contact at domain dot com")
+    # Only process if the pattern already looks email-like
     obfuscated_pattern = re.compile(
         r'([a-z0-9._%+-]+)\s*(?:at|@|\[at\]|\(at\))\s*([a-z0-9.-]+)\s*(?:dot|\.|\[dot\]|\(dot\))\s*([a-z]{2,})',
         re.IGNORECASE
@@ -78,7 +80,9 @@ def _extract_emails_from_html(html_content: str, domain: Optional[str] = None) -
     for match in obfuscated_matches:
         if len(match) == 3:
             email = f"{match[0]}@{match[1]}.{match[2]}"
-            found_emails.append(email.lower())
+            # Only add if it's plausible (filters out garbage)
+            if is_plausible_email(email):
+                found_emails.append(email.lower())
     
     # Common contact email prefixes (higher priority)
     common_contact_prefixes = ['info', 'contact', 'support', 'hello', 'hi', 'sales', 'help', 'inquiry', 'enquiry', 'admin', 'team']
@@ -97,27 +101,9 @@ def _extract_emails_from_html(html_content: str, domain: Optional[str] = None) -
         if not email_lower or '@' not in email_lower:
             continue
         
-        # Filter out obvious false positives
-        if any(skip in email_lower for skip in [
-            'example.com', 'test@', 'noreply', 'no-reply', '@sentry', '@wix',
-            'email@email.com', 'test@test.com', 'admin@example.com',
-            'your@email.com', 'your.email@', '@domain.com', '@company.com',
-            '@a.', '@a.price', '@a.com'  # Filter out partial matches like "kd@a.price"
-        ]):
-            continue
-        
-        # Must have valid domain structure
-        parts = email_lower.split('@')
-        if len(parts) != 2 or '.' not in parts[1]:
-            continue
-        
-        # Check for suspicious patterns (very short domains, single character domains)
-        domain_part = parts[1]
-        if len(domain_part) < 4 or domain_part.count('.') == 0:
-            continue
-        
-        # Skip emails with very short local parts (likely false positives)
-        if len(parts[0]) < 2:
+        # Use strict plausibility check (filters out .css, .jpg, CSS selectors, etc.)
+        if not is_plausible_email(email_lower):
+            logger.debug(f"🚫 [ENRICHMENT] Discarding implausible email candidate: {email_lower}")
             continue
         
         # Calculate priority score
@@ -184,10 +170,14 @@ async def _scrape_email_from_url(url: str, domain: Optional[str] = None) -> Opti
             if emails_with_priority:
                 # Get the highest priority email
                 best_email, best_priority = emails_with_priority[0]
-                logger.info(f"✅ [SCRAPING] Found {len(emails_with_priority)} email(s) on {url}. Best: {best_email} (priority: {best_priority})")
-                if len(emails_with_priority) > 1:
-                    logger.debug(f"   Other emails found: {[e[0] for e in emails_with_priority[1:3]]}")
-                return best_email
+                # Double-check plausibility before returning
+                if is_plausible_email(best_email):
+                    logger.info(f"✅ [SCRAPING] Found {len(emails_with_priority)} email(s) on {url}. Best: {best_email} (priority: {best_priority})")
+                    if len(emails_with_priority) > 1:
+                        logger.debug(f"   Other emails found: {[e[0] for e in emails_with_priority[1:3]]}")
+                    return best_email
+                else:
+                    logger.debug(f"🚫 [SCRAPING] Best email candidate failed plausibility check: {best_email}")
             else:
                 logger.debug(f"⚠️  [SCRAPING] No valid emails found in HTML for {url}")
     except httpx.HTTPStatusError as e:

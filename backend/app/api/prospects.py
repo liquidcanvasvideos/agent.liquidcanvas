@@ -12,6 +12,7 @@ import logging
 
 from app.db.database import get_db
 from app.api.auth import get_current_user_optional
+from app.utils.email_validation import format_job_error
 
 logger = logging.getLogger(__name__)
 from app.models.prospect import Prospect
@@ -261,16 +262,8 @@ async def create_enrichment_job(
     except Exception as e:
         logger.error(f"❌ Failed to start enrichment job {job.id}: {e}", exc_info=True)
         job.status = "failed"
-        # Categorize error and create user-friendly message
-        error_msg = str(e)
-        if "syntax" in error_msg.lower() or "indentation" in error_msg.lower():
-            job.error_message = "System error: Code syntax issue. Please contact support."
-        elif "import" in error_msg.lower() or "module" in error_msg.lower():
-            job.error_message = "System error: Module import failed. Please contact support."
-        elif "timeout" in error_msg.lower():
-            job.error_message = "Timeout: Job startup timed out. Please try again."
-        else:
-            job.error_message = f"Job startup failed: {error_msg[:100]}"  # Limit length
+        # Use helper to format error message
+        job.error_message = format_job_error(e)
         await db.commit()
         await db.refresh(job)
         return {

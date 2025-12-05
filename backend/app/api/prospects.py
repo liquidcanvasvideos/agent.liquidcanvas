@@ -442,21 +442,57 @@ async def enrich_and_deduplicate(
         
         # Start enrichment task in background
         try:
-            from app.tasks.enrichment import process_enrichment_job
             import asyncio
+            # Import inside function to catch syntax errors early
+            try:
+                from app.tasks.enrichment import process_enrichment_job
+            except SyntaxError as syntax_err:
+                logger.error(f"❌ Syntax error in enrichment task module: {syntax_err}", exc_info=True)
+                job.status = "failed"
+                job.error_message = "System error: Code syntax issue detected. Please contact support."
+                await db.commit()
+                await db.refresh(job)
+                return {
+                    "success": False,
+                    "job_id": job.id,
+                    "status": "failed",
+                    "error": "System error: Unable to start enrichment job due to code issue. Please contact support."
+                }
+            except ImportError as import_err:
+                logger.error(f"❌ Import error for enrichment task: {import_err}", exc_info=True)
+                job.status = "failed"
+                job.error_message = "System error: Module import failed. Please contact support."
+                await db.commit()
+                await db.refresh(job)
+                return {
+                    "success": False,
+                    "job_id": job.id,
+                    "status": "failed",
+                    "error": "System error: Unable to import enrichment task module. Please contact support."
+                }
+            
             asyncio.create_task(process_enrichment_job(str(job.id)))
             logger.info(f"✅ Enrichment job {job.id} started in background")
         except Exception as e:
             logger.error(f"❌ Failed to start enrichment job {job.id}: {e}", exc_info=True)
             job.status = "failed"
-            job.error_message = f"Failed to start job: {e}"
+            # Categorize error and create user-friendly message
+            error_msg = str(e)
+            if "syntax" in error_msg.lower() or "indentation" in error_msg.lower():
+                job.error_message = "System error: Code syntax issue. Please contact support."
+            elif "import" in error_msg.lower() or "module" in error_msg.lower():
+                job.error_message = "System error: Module import failed. Please contact support."
+            elif "timeout" in error_msg.lower():
+                job.error_message = "Timeout: Job startup timed out. Please try again."
+            else:
+                job.error_message = f"Job startup failed: {error_msg[:100]}"  # Limit length
             await db.commit()
             await db.refresh(job)
             return {
                 "success": False,
                 "job_id": job.id,
                 "status": "failed",
-                "error": str(e)
+                "error": job.error_message
             }
         
         enrichment_result = {

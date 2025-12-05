@@ -152,9 +152,16 @@ async def process_enrichment_job(job_id: str) -> Dict[str, Any]:
                             hunter_result = {"success": False, "emails": []}
                         hunter_time = (time.time() - prospect_start_time) * 1000
                         logger.info(f"⏱️  [ENRICHMENT] Hunter.io API call completed in {hunter_time:.0f}ms")
+                    except RateLimitError as rate_err:
+                        # Handle rate limit errors - log and continue with local scraping
+                        hunter_time = (time.time() - prospect_start_time) * 1000
+                        logger.warning(f"⚠️  [ENRICHMENT] Rate limit error after {hunter_time:.0f}ms: {rate_err.message}")
+                        if rate_err.error_id == "restricted_account":
+                            logger.error(f"🚫 [ENRICHMENT] Hunter.io account restricted. Please check Hunter account.")
+                        hunter_result = {"success": False, "error": rate_err.message, "domain": domain, "status": rate_err.error_id}
                     except Exception as hunter_err:
                         hunter_time = (time.time() - prospect_start_time) * 1000
-                        logger.error(f"❌ [ENRICHMENT] Hunter.io API call failed after {hunter_time:.0f}ms: {hunter_err}", exc_info=True)
+                        logger.error(f"❌ [ENRICHMENT] Enrichment failed after {hunter_time:.0f}ms: {hunter_err}", exc_info=True)
                         hunter_result = {"success": False, "error": str(hunter_err), "domain": domain}
                     
                     # Helper: compute previous best confidence from stored hunter_payload

@@ -429,6 +429,33 @@ export async function enrichEmail(domain: string, name?: string): Promise<Enrich
   }
 }
 
+export async function enrichProspectById(prospectId: string): Promise<EnrichmentResult> {
+  const token = getAuthToken()
+  if (!token) {
+    throw new Error('Authentication required. Please log in first.')
+  }
+  
+  try {
+    const res = await authenticatedFetch(`${API_BASE}/prospects/${prospectId}/enrich`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+    
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: 'Failed to enrich email' }))
+      throw new Error(error.detail || error.error || 'Failed to enrich email')
+    }
+    
+    const data = await res.json()
+    return data
+  } catch (error: any) {
+    console.error('❌ Error enriching email:', error)
+    throw new Error(`Enrichment failed: ${error.message}`)
+  }
+}
+
 export async function cancelJob(jobId: string): Promise<{ success: boolean; message?: string; error?: string }> {
   const token = getAuthToken()
   if (!token) {

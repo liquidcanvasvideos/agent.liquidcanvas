@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ExternalLink, RefreshCw } from 'lucide-react'
-import { listProspects, type Prospect } from '@/lib/api'
+import { ExternalLink, RefreshCw, Mail, Loader2 } from 'lucide-react'
+import { listProspects, enrichProspectById, type Prospect } from '@/lib/api'
 import { safeToFixed } from '@/lib/safe-utils'
 
 export default function WebsitesTable() {
@@ -11,15 +11,20 @@ export default function WebsitesTable() {
   const [skip, setSkip] = useState(0)
   const [total, setTotal] = useState(0)
   const limit = 50
+  const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set())
 
   const loadWebsites = async () => {
     try {
       setLoading(true)
       const response = await listProspects(skip, limit)
-      setProspects(response.data)
-      setTotal(response.total)
+      const data = Array.isArray(response?.data) ? response.data : 
+                   Array.isArray(response) ? response : []
+      setProspects(data)
+      setTotal(response?.total ?? data.length)
     } catch (error) {
       console.error('Failed to load websites:', error)
+      setProspects([])
+      setTotal(0)
     } finally {
       setLoading(false)
     }
@@ -29,13 +34,50 @@ export default function WebsitesTable() {
     loadWebsites()
     const interval = setInterval(() => {
       loadWebsites()
-    }, 30000) // Refresh every 30 seconds (debounced to prevent loops)
-    return () => clearInterval(interval)
+    }, 30000)
+    
+    const handleJobCompleted = () => {
+      console.log('🔄 Job completed event received, refreshing websites table...')
+      loadWebsites()
+    }
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('jobsCompleted', handleJobCompleted)
+    }
+    
+    return () => {
+      clearInterval(interval)
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('jobsCompleted', handleJobCompleted)
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skip])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString()
+  }
+
+  const handleEnrichEmail = async (prospectId: string, domain: string) => {
+    setEnrichingIds(prev => new Set(prev).add(prospectId))
+    try {
+      const result = await enrichProspectById(prospectId)
+      if (result.success && result.email) {
+        console.log(`✅ Email found for ${domain}: ${result.email}`)
+        await loadWebsites()
+      } else {
+        console.warn(`⚠️ No email found for ${domain}: ${result.message || result.error}`)
+        await loadWebsites()
+      }
+    } catch (error: any) {
+      console.error(`❌ Error enriching ${domain}:`, error)
+    } finally {
+      setEnrichingIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(prospectId)
+        return newSet
+      })
+    }
   }
 
   return (
@@ -68,52 +110,86 @@ export default function WebsitesTable() {
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Page Title</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">DA Score</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Score</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Email</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Status</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Created</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {prospects.map((prospect) => (
-                  <tr key={prospect.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-3 px-4">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium text-gray-900">{prospect.domain}</span>
-                        {prospect.page_url && (
-                          <a
-                            href={prospect.page_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-olive-600 hover:text-olive-700"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
+                {prospects.map((prospect) => {
+                  const isEnriching = enrichingIds.has(prospect.id)
+                  const hasEmail: boolean = Boolean(prospect.contact_email && prospect.contact_email.trim() !== '')
+                  return (
+                    <tr key={prospect.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium text-gray-900">{prospect.domain}</span>
+                          {prospect.page_url && (
+                            <a
+                              href={prospect.page_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-olive-600 hover:text-olive-700"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="text-gray-900">{prospect.page_title || 'N/A'}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="text-gray-900">{safeToFixed(prospect.da_est, 1)}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="text-gray-900">{safeToFixed(prospect.score, 2)}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        {hasEmail ? (
+                          <span className="text-green-700 font-medium">{prospect.contact_email}</span>
+                        ) : (
+                          <span className="text-gray-500">No Email</span>
                         )}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-gray-900">{prospect.page_title || 'N/A'}</span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-gray-900">{safeToFixed(prospect.da_est, 1)}</span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-gray-900">{safeToFixed(prospect.score, 2)}</span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        prospect.outreach_status === 'sent' ? 'bg-green-100 text-green-800' :
-                        prospect.outreach_status === 'replied' ? 'bg-blue-100 text-blue-800' :
-                        prospect.outreach_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {prospect.outreach_status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600">
-                      {formatDate(prospect.created_at)}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          prospect.outreach_status === 'sent' ? 'bg-green-100 text-green-800' :
+                          prospect.outreach_status === 'replied' ? 'bg-blue-100 text-blue-800' :
+                          prospect.outreach_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {prospect.outreach_status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600">
+                        {formatDate(prospect.created_at)}
+                      </td>
+                      <td className="py-3 px-4">
+                        <button
+                          onClick={() => handleEnrichEmail(prospect.id, prospect.domain)}
+                          disabled={isEnriching || hasEmail}
+                          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs transition-colors ${
+                            hasEmail
+                              ? 'bg-green-100 text-green-700 cursor-not-allowed'
+                              : isEnriching
+                                ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                                : 'bg-olive-100 text-olive-700 hover:bg-olive-200'
+                          }`}
+                          title={hasEmail ? "Email already found" : "Enrich email for this website"}
+                        >
+                          {isEnriching ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Mail className="w-3 h-3" />
+                          )}
+                          <span>{hasEmail ? 'Has Email' : (isEnriching ? 'Enriching...' : 'Enrich')}</span>
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

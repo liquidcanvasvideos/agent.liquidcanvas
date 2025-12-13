@@ -249,7 +249,7 @@ async def _scrape_email_from_domain(domain: str, page_url: Optional[str] = None)
     urls_to_try.append(f"https://{domain}")
     urls_to_try.append(f"http://{domain}")
     
-    # Priority 3: Common contact page paths
+    # Priority 3: Common contact page paths (expanded list)
     common_paths = [
         "/contact",
         "/contact-us",
@@ -261,6 +261,24 @@ async def _scrape_email_from_domain(domain: str, page_url: Optional[str] = None)
         "/about",
         "/about-us",
         "/aboutus",
+        "/contact.html",
+        "/contact.php",
+        "/contact-page",
+        "/contactus.html",
+        "/get-in-touch.html",
+        "/reach-out",
+        "/reachout",
+        "/connect",
+        "/connect-with-us",
+        "/email-us",
+        "/email",
+        "/mail",
+        "/mail-us",
+        "/support",
+        "/help",
+        "/help-center",
+        "/faq",
+        "/faqs",
     ]
     
     for path in common_paths:

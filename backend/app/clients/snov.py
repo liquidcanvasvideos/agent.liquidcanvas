@@ -146,7 +146,12 @@ class SnovIOClient:
             # Get access token
             access_token = await self._get_access_token()
             
-            url = f"{self.BASE_URL}/get-domain-emails-with-info"
+            # Try multiple endpoint variations
+            endpoints_to_try = [
+                "/get-domain-emails-with-info",
+                "/get-domain-emails",
+                "/domain-emails"
+            ]
             
             params = {
                 "domain": domain,
@@ -155,11 +160,40 @@ class SnovIOClient:
                 "limit": min(limit, 100)  # Snov.io max is 100
             }
             
+            last_error = None
             async with httpx.AsyncClient(timeout=30.0) as client:
-                logger.info(f"Calling Snov.io API for domain: {domain} (limit={params['limit']})")
-                response = await client.get(url, params=params)
-                response.raise_for_status()
-                result = response.json()
+                for endpoint in endpoints_to_try:
+                    url = f"{self.BASE_URL}{endpoint}"
+                    try:
+                        logger.info(f"Calling Snov.io API for domain: {domain} using endpoint: {endpoint} (limit={params['limit']})")
+                        response = await client.get(url, params=params)
+                        
+                        # If 404, try next endpoint
+                        if response.status_code == 404:
+                            logger.debug(f"Snov.io endpoint {endpoint} returned 404, trying next endpoint...")
+                            last_error = f"HTTP 404: Endpoint {endpoint} not found"
+                            continue
+                        
+                        response.raise_for_status()
+                        result = response.json()
+                        break  # Success, exit loop
+                    except httpx.HTTPStatusError as e:
+                        if e.response.status_code == 404:
+                            logger.debug(f"Snov.io endpoint {endpoint} returned 404, trying next endpoint...")
+                            last_error = f"HTTP 404: Endpoint {endpoint} not found"
+                            continue
+                        else:
+                            raise  # Re-raise non-404 errors
+                else:
+                    # All endpoints failed with 404 - domain not in Snov.io database
+                    logger.info(f"Snov.io returned 404 for all endpoints for {domain} - domain may not be in database")
+                    return {
+                        "success": True,  # Treat as success (no emails found, not an error)
+                        "domain": domain,
+                        "emails": [],
+                        "total": 0,
+                        "message": "Domain not found in Snov.io database"
+                    }
                 
                 # Handle Snov.io response format
                 if result.get("success"):

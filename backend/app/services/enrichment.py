@@ -421,7 +421,12 @@ async def enrich_prospect_email(domain: str, name: Optional[str] = None, page_ur
         
         emails = snov_result.get("emails", [])
         if not emails or len(emails) == 0:
-            logger.info(f"⚠️  [ENRICHMENT] No emails found for {normalized_domain} via Snov.io, trying fallback methods")
+            # Check if this was a 404 (domain not in database) - don't log as warning
+            message = snov_result.get("message", "")
+            if "not found in Snov.io database" in message or "Domain not found" in message:
+                logger.info(f"ℹ️  [ENRICHMENT] Domain {normalized_domain} not in Snov.io database, trying local scraping fallback")
+            else:
+                logger.info(f"⚠️  [ENRICHMENT] No emails found for {normalized_domain} via Snov.io, trying fallback methods")
             
             # Fallback 1: Try local HTML scraping
             try:

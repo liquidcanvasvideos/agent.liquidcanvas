@@ -476,8 +476,8 @@ async def enrich_prospect_email(domain: str, name: Optional[str] = None, page_ur
                 generated_patterns = _generate_email_patterns(normalized_domain, name)
                 logger.info(f"🔍 [ENRICHMENT] Generated {len(generated_patterns)} email patterns for {normalized_domain}")
                 
-                # Try to verify patterns (only first few to avoid too many API calls)
-                for pattern_email in generated_patterns[:5]:  # Limit to 5 to avoid rate limits
+                # Try to verify patterns (increased limit for better coverage)
+                for pattern_email in generated_patterns[:10]:  # Increased from 5 to 10 to try more patterns
                     try:
                         verify_result = await snov_client.email_verifier(pattern_email)
                         if verify_result.get("success") and verify_result.get("result") == "deliverable":

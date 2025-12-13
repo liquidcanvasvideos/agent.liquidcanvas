@@ -147,8 +147,8 @@ async def enrich_prospect_by_id(
         if enrich_result and enrich_result.get("email"):
             # Update prospect with email
             prospect.contact_email = enrich_result["email"]
-            prospect.contact_method = enrich_result.get("source", "hunter_io")
-            prospect.hunter_payload = enrich_result
+            prospect.contact_method = enrich_result.get("source", "snov_io")
+            prospect.snov_payload = enrich_result  # Use snov_payload instead of hunter_payload
             await db.commit()
             await db.refresh(prospect)
             
@@ -163,9 +163,9 @@ async def enrich_prospect_by_id(
                 "message": f"Email enriched for {prospect.domain}"
             }
         else:
-            # No email found, but update hunter_payload for retry
+            # No email found, but update snov_payload for retry
             if enrich_result:
-                prospect.hunter_payload = enrich_result
+                prospect.snov_payload = enrich_result
                 await db.commit()
             
             return {

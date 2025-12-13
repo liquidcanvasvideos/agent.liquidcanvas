@@ -190,30 +190,56 @@ class SnovIOClient:
             last_error = None
             async with httpx.AsyncClient(timeout=30.0) as client:
                 for endpoint_config in endpoints_to_try:
+                    method = endpoint_config["method"]
                     endpoint = endpoint_config["endpoint"]
                     params = endpoint_config["params"]
                     req_headers = endpoint_config["headers"]
+                    body = endpoint_config["body"]
                     url = f"{self.BASE_URL}{endpoint}"
                     try:
-                        logger.info(f"Calling Snov.io API for domain: {domain} using endpoint: {endpoint} with {'Bearer token' if 'Authorization' in req_headers else 'access_token param'}")
-                        response = await client.get(url, params=params, headers=req_headers)
+                        auth_method = 'Bearer token' if 'Authorization' in req_headers else 'access_token param'
+                        logger.info(f"Calling Snov.io API for domain: {domain} using {method} {endpoint} with {auth_method}")
+                        
+                        if method == "POST":
+                            response = await client.post(url, params=params, headers=req_headers, json=body)
+                        else:
+                            response = await client.get(url, params=params, headers=req_headers)
                         
                         # If 404, try next endpoint
                         if response.status_code == 404:
-                            logger.debug(f"Snov.io endpoint {endpoint} returned 404, trying next endpoint...")
-                            last_error = f"HTTP 404: Endpoint {endpoint} not found"
+                            error_body = response.text[:200] if response.text else ""
+                            logger.debug(f"Snov.io endpoint {endpoint} returned 404: {error_body}, trying next method...")
+                            last_error = f"HTTP 404: {error_body}"
+                            continue
+                        
+                        # If 401, authentication issue - try different auth method
+                        if response.status_code == 401:
+                            error_body = response.text[:200] if response.text else ""
+                            logger.debug(f"Snov.io endpoint {endpoint} returned 401 (auth failed): {error_body}, trying different auth method...")
+                            last_error = f"HTTP 401: {error_body}"
                             continue
                         
                         response.raise_for_status()
                         result = response.json()
+                        logger.info(f"✅ Snov.io API call successful for {domain} using endpoint: {endpoint}")
                         break  # Success, exit loop
                     except httpx.HTTPStatusError as e:
                         if e.response.status_code == 404:
-                            logger.debug(f"Snov.io endpoint {endpoint} returned 404, trying next endpoint...")
-                            last_error = f"HTTP 404: Endpoint {endpoint} not found"
+                            error_body = e.response.text[:200] if e.response.text else ""
+                            logger.debug(f"Snov.io endpoint {endpoint} returned 404: {error_body}, trying next method...")
+                            last_error = f"HTTP 404: {error_body}"
+                            continue
+                        elif e.response.status_code == 401:
+                            error_body = e.response.text[:200] if e.response.text else ""
+                            logger.debug(f"Snov.io endpoint {endpoint} returned 401 (auth failed): {error_body}, trying different auth method...")
+                            last_error = f"HTTP 401: {error_body}"
                             continue
                         else:
-                            raise  # Re-raise non-404 errors
+                            # Log non-404/401 errors but continue trying
+                            error_body = e.response.text[:200] if e.response.text else ""
+                            logger.warning(f"Snov.io endpoint {endpoint} returned {e.response.status_code}: {error_body}")
+                            last_error = f"HTTP {e.response.status_code}: {error_body}"
+                            continue
                 else:
                     # All endpoints failed with 404 - domain not in Snov.io database
                     logger.info(f"Snov.io returned 404 for all endpoints for {domain} - domain may not be in database")

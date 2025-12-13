@@ -22,9 +22,12 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
   const [isComposing, setIsComposing] = useState(false)
   const [isSending, setIsSending] = useState(false)
 
+  const [error, setError] = useState<string | null>(null)
+
   const loadProspects = async () => {
     try {
       setLoading(true)
+      setError(null)
       const response = await listProspects(
         skip,
         limit,
@@ -34,8 +37,17 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
       )
       setProspects(response.data)
       setTotal(response.total)
-    } catch (error) {
+      if (response.data.length === 0 && response.total === 0) {
+        setError(emailsOnly 
+          ? 'No leads with emails found. Enrich prospects to get email addresses.'
+          : 'No leads found. Run a discovery job to find prospects.')
+      }
+    } catch (error: any) {
       console.error('Failed to load prospects:', error)
+      const errorMessage = error?.message || 'Failed to load leads. Check if backend is running.'
+      setError(errorMessage)
+      setProspects([])
+      setTotal(0)
     } finally {
       setLoading(false)
     }
@@ -129,10 +141,28 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
       {loading && prospects.length === 0 ? (
         <div className="text-center py-8">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-olive-600 border-t-transparent"></div>
-          <p className="text-gray-500 mt-2">Loading...</p>
+          <p className="text-gray-500 mt-2">Loading {emailsOnly ? 'emails' : 'leads'}...</p>
+        </div>
+      ) : error ? (
+        <div className="text-center py-8">
+          <p className="text-red-600 mb-2 font-semibold">Error loading {emailsOnly ? 'emails' : 'leads'}</p>
+          <p className="text-gray-600 text-sm">{error}</p>
+          <button
+            onClick={loadProspects}
+            className="mt-4 px-4 py-2 bg-olive-600 text-white rounded-md hover:bg-olive-700"
+          >
+            Retry
+          </button>
         </div>
       ) : prospects.length === 0 ? (
-        <p className="text-gray-500 text-center py-8">No {emailsOnly ? 'emails' : 'leads'} found</p>
+        <div className="text-center py-8">
+          <p className="text-gray-500 mb-2">No {emailsOnly ? 'emails' : 'leads'} found</p>
+          <p className="text-gray-400 text-sm">
+            {emailsOnly 
+              ? 'Enrich prospects from the Websites tab to get email addresses.'
+              : 'Run a discovery job from the Overview tab to find leads.'}
+          </p>
+        </div>
       ) : (
         <>
           <div className="overflow-x-auto">

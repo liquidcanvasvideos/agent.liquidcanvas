@@ -13,16 +13,24 @@ export default function WebsitesTable() {
   const limit = 50
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set())
 
+  const [error, setError] = useState<string | null>(null)
+
   const loadWebsites = async () => {
     try {
       setLoading(true)
+      setError(null)
       const response = await listProspects(skip, limit)
       const data = Array.isArray(response?.data) ? response.data : 
                    Array.isArray(response) ? response : []
       setProspects(data)
       setTotal(response?.total ?? data.length)
-    } catch (error) {
+      if (data.length === 0 && response?.total === 0) {
+        setError('No websites found. Run a discovery job to find websites.')
+      }
+    } catch (error: any) {
       console.error('Failed to load websites:', error)
+      const errorMessage = error?.message || 'Failed to load websites. Check if backend is running.'
+      setError(errorMessage)
       setProspects([])
       setTotal(0)
     } finally {
@@ -96,10 +104,24 @@ export default function WebsitesTable() {
       {loading && prospects.length === 0 ? (
         <div className="text-center py-8">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-olive-600 border-t-transparent"></div>
-          <p className="text-gray-500 mt-2">Loading...</p>
+          <p className="text-gray-500 mt-2">Loading websites...</p>
+        </div>
+      ) : error ? (
+        <div className="text-center py-8">
+          <p className="text-red-600 mb-2 font-semibold">Error loading websites</p>
+          <p className="text-gray-600 text-sm">{error}</p>
+          <button
+            onClick={loadWebsites}
+            className="mt-4 px-4 py-2 bg-olive-600 text-white rounded-md hover:bg-olive-700"
+          >
+            Retry
+          </button>
         </div>
       ) : prospects.length === 0 ? (
-        <p className="text-gray-500 text-center py-8">No websites found</p>
+        <div className="text-center py-8">
+          <p className="text-gray-500 mb-2">No websites found</p>
+          <p className="text-gray-400 text-sm">Run a discovery job from the Overview tab to find websites.</p>
+        </div>
       ) : (
         <>
           <div className="overflow-x-auto">

@@ -13,6 +13,7 @@ import AutomationControl from '@/components/AutomationControl'
 import ManualScrape from '@/components/ManualScrape'
 import WebsitesTable from '@/components/WebsitesTable'
 import SystemStatus from '@/components/SystemStatus'
+import Sidebar from '@/components/Sidebar'
 import { getStats, listJobs } from '@/lib/api'
 import type { Stats, Job } from '@/lib/api'
 import { 
@@ -114,90 +115,60 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Modern Header */}
-      <header className="bg-white/80 backdrop-blur-lg shadow-sm border-b border-gray-200/50 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-black">
-                Art Outreach Automation
-              </h1>
-              <p className="text-gray-600 mt-0.5 text-xs">
-                Automated outreach system
-              </p>
-            </div>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={() => {
-                  localStorage.removeItem('auth_token')
-                  router.push('/login')
-                }}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-olive-600 hover:bg-olive-700 text-white rounded-md transition-colors text-sm"
-              >
-                <LogOutIcon className="w-3.5 h-3.5" />
-                <span>Logout</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Left Sidebar */}
+      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} tabs={tabs} />
 
-      {/* Connection Error Banner */}
-      {connectionError && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-          <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4 shadow-sm">
-            <div className="flex items-center">
-              <div>
-                <p className="text-sm font-medium text-red-800">
-                  Backend not connected
-                </p>
-                <p className="text-xs text-red-600 mt-1">
-                  Unable to connect to API server. Please ensure the backend is running.
-                </p>
+      {/* Main Content Area */}
+      <div className="flex-1 lg:ml-64 flex flex-col">
+        {/* Top Header */}
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
+          <div className="px-4 sm:px-6 py-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {tabs.find(t => t.id === activeTab)?.label || 'Dashboard'}
+              </h2>
+            </div>
+            <button
+              onClick={() => {
+                localStorage.removeItem('auth_token')
+                router.push('/login')
+              }}
+              className="flex items-center space-x-2 px-4 py-2 bg-olive-600 hover:bg-olive-700 text-white rounded-md transition-colors text-sm"
+            >
+              <LogOutIcon className="w-4 h-4" />
+              <span>Logout</span>
+            </button>
+          </div>
+        </header>
+
+        {/* Connection Error Banner */}
+        {connectionError && (
+          <div className="px-4 sm:px-6 py-4">
+            <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4 shadow-sm">
+              <div className="flex items-center">
+                <div>
+                  <p className="text-sm font-medium text-red-800">
+                    Backend not connected
+                  </p>
+                  <p className="text-xs text-red-600 mt-1">
+                    Unable to connect to API server. Please ensure the backend is running.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
+        )}
+
+        {/* System Status Bar */}
+        <div className="px-4 sm:px-6 py-3">
+          <SystemStatus jobs={jobs} loading={loading} />
         </div>
-      )}
 
-      {/* System Status Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-3">
-        <SystemStatus jobs={jobs} loading={loading} />
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-        <div className="bg-white/80 backdrop-blur-md rounded-xl shadow-md border-2 border-gray-200/60 p-2">
-          <nav className="flex space-x-2 overflow-x-auto">
-            {tabs.map((tab) => {
-              const Icon = tab.icon
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`
-                    flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all whitespace-nowrap
-                    ${
-                      activeTab === tab.id
-                        ? 'bg-gradient-to-r from-olive-600 to-olive-700 text-white shadow-lg transform scale-105'
-                        : 'text-gray-700 hover:bg-olive-50 hover:text-olive-700'
-                    }
-                  `}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-                </button>
-              )
-            })}
-          </nav>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        {/* Main Content */}
+        <main className="flex-1 px-4 sm:px-6 py-4 overflow-y-auto">
         {activeTab === 'overview' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Stats Cards - Full Width */}
             <div className="lg:col-span-12">
               {stats ? <StatsCards stats={stats} /> : (
@@ -227,18 +198,38 @@ export default function Dashboard() {
           </div>
         )}
 
-        {activeTab === 'websites' && <WebsitesTable />}
+        {activeTab === 'websites' && (
+          <div className="max-w-7xl mx-auto">
+            <WebsitesTable />
+          </div>
+        )}
 
-        {activeTab === 'leads' && <LeadsTable />}
+        {activeTab === 'leads' && (
+          <div className="max-w-7xl mx-auto">
+            <LeadsTable />
+          </div>
+        )}
 
-        {activeTab === 'scraped_emails' && <LeadsTable emailsOnly />}
+        {activeTab === 'scraped_emails' && (
+          <div className="max-w-7xl mx-auto">
+            <LeadsTable emailsOnly />
+          </div>
+        )}
 
-        {activeTab === 'emails' && <EmailsTable />}
+        {activeTab === 'emails' && (
+          <div className="max-w-7xl mx-auto">
+            <EmailsTable />
+          </div>
+        )}
 
-        {activeTab === 'jobs' && jobs.length > 0 && <JobStatusPanel jobs={jobs} expanded />}
+        {activeTab === 'jobs' && jobs.length > 0 && (
+          <div className="max-w-7xl mx-auto">
+            <JobStatusPanel jobs={jobs} expanded />
+          </div>
+        )}
 
         {activeTab === 'settings' && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="text-center py-8">
               <Settings className="w-12 h-12 text-olive-600 mx-auto mb-4" />
               <h2 className="text-xl font-bold text-gray-900 mb-2">System Settings</h2>
@@ -255,7 +246,7 @@ export default function Dashboard() {
         )}
 
         {activeTab === 'guide' && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="text-center mb-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-2">User Guide</h2>
               <p className="text-gray-600">Complete documentation on how to use the Art Outreach Automation</p>
@@ -274,7 +265,8 @@ export default function Dashboard() {
             </div>
           </div>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   )
 }

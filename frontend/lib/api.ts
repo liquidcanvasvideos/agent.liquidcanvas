@@ -640,8 +640,12 @@ export async function getStats(): Promise<Stats | null> {
         allProspectsList = allProspects
       } else if (allProspects.data && Array.isArray(allProspects.data)) {
         allProspectsList = allProspects.data
-      } else if (allProspects.prospects && Array.isArray(allProspects.prospects)) {
-        allProspectsList = allProspects.prospects
+      } else {
+        // Handle raw backend response that might have 'prospects' property
+        const rawResponse = allProspects as any
+        if (rawResponse.prospects && Array.isArray(rawResponse.prospects)) {
+          allProspectsList = rawResponse.prospects
+        }
       }
     }
     
@@ -651,8 +655,12 @@ export async function getStats(): Promise<Stats | null> {
         prospectsWithEmailList = prospectsWithEmail
       } else if (prospectsWithEmail.data && Array.isArray(prospectsWithEmail.data)) {
         prospectsWithEmailList = prospectsWithEmail.data
-      } else if (prospectsWithEmail.prospects && Array.isArray(prospectsWithEmail.prospects)) {
-        prospectsWithEmailList = prospectsWithEmail.prospects
+      } else {
+        // Handle raw backend response that might have 'prospects' property
+        const rawResponse = prospectsWithEmail as any
+        if (rawResponse.prospects && Array.isArray(rawResponse.prospects)) {
+          prospectsWithEmailList = rawResponse.prospects
+        }
       }
     }
     

@@ -68,7 +68,12 @@ export default function Dashboard() {
       ])
       
       if (statsData) setStats(statsData)
-      if (jobsData) setJobs(jobsData)
+      // Ensure jobsData is always an array
+      if (jobsData) {
+        setJobs(Array.isArray(jobsData) ? jobsData : [])
+      } else {
+        setJobs([])
+      }
       
       const backendResponding = statsData !== null || jobsData.length > 0
       setConnectionError(!backendResponding)
@@ -129,43 +134,43 @@ export default function Dashboard() {
                 {tabs.find(t => t.id === activeTab)?.label || 'Dashboard'}
               </h2>
             </div>
-            <button
-              onClick={() => {
-                localStorage.removeItem('auth_token')
-                router.push('/login')
-              }}
+              <button
+                onClick={() => {
+                  localStorage.removeItem('auth_token')
+                  router.push('/login')
+                }}
               className="flex items-center space-x-2 px-4 py-2 bg-olive-600 hover:bg-olive-700 text-white rounded-md transition-colors text-sm"
-            >
+              >
               <LogOutIcon className="w-4 h-4" />
-              <span>Logout</span>
-            </button>
-          </div>
-        </header>
+                <span>Logout</span>
+              </button>
+        </div>
+      </header>
 
-        {/* Connection Error Banner */}
-        {connectionError && (
+      {/* Connection Error Banner */}
+      {connectionError && (
           <div className="px-4 sm:px-6 py-4">
-            <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center">
-                <div>
-                  <p className="text-sm font-medium text-red-800">
-                    Backend not connected
-                  </p>
-                  <p className="text-xs text-red-600 mt-1">
-                    Unable to connect to API server. Please ensure the backend is running.
-                  </p>
-                </div>
+          <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4 shadow-sm">
+            <div className="flex items-center">
+              <div>
+                <p className="text-sm font-medium text-red-800">
+                  Backend not connected
+                </p>
+                <p className="text-xs text-red-600 mt-1">
+                  Unable to connect to API server. Please ensure the backend is running.
+                </p>
               </div>
             </div>
           </div>
-        )}
-
-        {/* System Status Bar */}
-        <div className="px-4 sm:px-6 py-3">
-          <SystemStatus jobs={jobs} loading={loading} />
         </div>
+      )}
 
-        {/* Main Content */}
+      {/* System Status Bar */}
+        <div className="px-4 sm:px-6 py-3">
+        <SystemStatus jobs={jobs} loading={loading} />
+      </div>
+
+      {/* Main Content */}
         <main className="flex-1 px-4 sm:px-6 py-4 overflow-y-auto">
         {activeTab === 'overview' && (
           <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -265,7 +270,7 @@ export default function Dashboard() {
             </div>
           </div>
         )}
-        </main>
+      </main>
       </div>
     </div>
   )

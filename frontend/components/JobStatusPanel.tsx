@@ -45,7 +45,7 @@ export default function JobStatusPanel({ jobs, expanded = false }: JobStatusPane
 
     const result = job.result as any
     const stats = result.search_statistics
-    const queries = result.queries_detail || []
+    const queries = Array.isArray(result.queries_detail) ? result.queries_detail : []
 
     return (
       <div className="mt-3 space-y-3 pt-3 border-t border-gray-200">
@@ -184,7 +184,9 @@ export default function JobStatusPanel({ jobs, expanded = false }: JobStatusPane
     )
   }
 
-  const displayJobs = expanded ? jobs : jobs.slice(0, 5)
+  // Ensure jobs is always an array
+  const jobsArray = Array.isArray(jobs) ? jobs : []
+  const displayJobs = expanded ? jobsArray : jobsArray.slice(0, 5)
 
   return (
     <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border-2 border-gray-200/60 p-6">

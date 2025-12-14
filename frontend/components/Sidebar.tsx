@@ -67,7 +67,7 @@ export default function Sidebar({ activeTab, onTabChange, tabs }: SidebarProps) 
       {/* Navigation Items */}
       <nav className="flex-1 overflow-y-auto py-4 px-3">
         <div className="space-y-1">
-          {tabs.map((tab) => {
+          {Array.isArray(tabs) && tabs.map((tab) => {
             const Icon = tab.icon
             const isActive = activeTab === tab.id
             return (

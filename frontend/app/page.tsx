@@ -25,7 +25,8 @@ import {
   Activity,
   AtSign,
   LogOut as LogOutIcon,
-  BookOpen
+  BookOpen,
+  RefreshCw
 } from 'lucide-react'
 
 export default function Dashboard() {
@@ -72,6 +73,29 @@ export default function Dashboard() {
       const jobsArray = Array.isArray(jobsData) ? jobsData : []
       setJobs(jobsArray)
       
+      // Check for completed discovery jobs and trigger refresh
+      const completedDiscoveryJobs = jobsArray.filter(
+        (job: any) => job.job_type === 'discover' && job.status === 'completed'
+      )
+      
+      if (completedDiscoveryJobs.length > 0) {
+        // Get the most recent completed discovery job
+        const latestJob = completedDiscoveryJobs.sort((a: any, b: any) => {
+          const dateA = new Date(a.updated_at || a.created_at || 0).getTime()
+          const dateB = new Date(b.updated_at || b.created_at || 0).getTime()
+          return dateB - dateA
+        })[0]
+        
+        console.log('🔄 Found completed discovery job, triggering refresh...', latestJob.id)
+        // Dispatch event to refresh all tables
+        // Use setTimeout to ensure tables are mounted
+        setTimeout(() => {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('jobsCompleted'))
+          }
+        }, 500)
+      }
+      
       const backendResponding = statsData !== null || jobsArray.length > 0
       setConnectionError(!backendResponding)
     } catch (error: any) {
@@ -91,6 +115,10 @@ export default function Dashboard() {
 
   const refreshData = () => {
     loadData()
+    // Also trigger the jobsCompleted event to refresh all tables
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('jobsCompleted'))
+    }
   }
 
   const tabs = [
@@ -131,16 +159,26 @@ export default function Dashboard() {
                 {tabs.find(t => t.id === activeTab)?.label || 'Dashboard'}
               </h2>
             </div>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={refreshData}
+                className="flex items-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors text-sm"
+                title="Refresh all data"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Refresh All</span>
+              </button>
               <button
                 onClick={() => {
                   localStorage.removeItem('auth_token')
                   router.push('/login')
                 }}
-              className="flex items-center space-x-2 px-4 py-2 bg-olive-600 hover:bg-olive-700 text-white rounded-md transition-colors text-sm"
+                className="flex items-center space-x-2 px-4 py-2 bg-olive-600 hover:bg-olive-700 text-white rounded-md transition-colors text-sm"
               >
-              <LogOutIcon className="w-4 h-4" />
+                <LogOutIcon className="w-4 h-4" />
                 <span>Logout</span>
               </button>
+            </div>
         </div>
       </header>
 

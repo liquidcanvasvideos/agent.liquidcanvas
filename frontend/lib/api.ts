@@ -436,7 +436,8 @@ export async function enrichProspectById(prospectId: string): Promise<Enrichment
   }
   
   try {
-    const res = await authenticatedFetch(`${API_BASE}/prospects/${prospectId}/enrich`, {
+    console.log(`🔍 Enriching prospect ${prospectId}...`)
+    const res = await authenticatedFetch(`${API_BASE}/prospects/enrich/${prospectId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -445,10 +446,12 @@ export async function enrichProspectById(prospectId: string): Promise<Enrichment
     
     if (!res.ok) {
       const error = await res.json().catch(() => ({ detail: 'Failed to enrich email' }))
-      throw new Error(error.detail || error.error || 'Failed to enrich email')
+      console.error(`❌ Enrichment failed (${res.status}):`, error)
+      throw new Error(error.detail || error.error || `Failed to enrich email: ${res.status} ${res.statusText}`)
     }
     
     const data = await res.json()
+    console.log(`✅ Enrichment response:`, data)
     return data
   } catch (error: any) {
     console.error('❌ Error enriching email:', error)

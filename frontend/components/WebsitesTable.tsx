@@ -68,16 +68,24 @@ export default function WebsitesTable() {
   const handleEnrichEmail = async (prospectId: string, domain: string) => {
     setEnrichingIds(prev => new Set(prev).add(prospectId))
     try {
+      console.log(`🔄 Starting enrichment for ${domain} (ID: ${prospectId})...`)
       const result = await enrichProspectById(prospectId)
       if (result.success && result.email) {
         console.log(`✅ Email found for ${domain}: ${result.email}`)
+        // Show success message
+        alert(`Email found: ${result.email}`)
         await loadWebsites()
       } else {
-        console.warn(`⚠️ No email found for ${domain}: ${result.message || result.error}`)
+        const message = result.message || result.error || 'No email found'
+        console.warn(`⚠️ No email found for ${domain}: ${message}`)
+        // Show info message
+        alert(`No email found for ${domain}. ${message}`)
         await loadWebsites()
       }
     } catch (error: any) {
       console.error(`❌ Error enriching ${domain}:`, error)
+      // Show error message to user
+      alert(`Failed to enrich ${domain}: ${error.message || 'Unknown error'}`)
     } finally {
       setEnrichingIds(prev => {
         const newSet = new Set(prev)

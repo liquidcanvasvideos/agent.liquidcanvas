@@ -15,9 +15,12 @@ export default function WebsitesTable() {
 
   const [error, setError] = useState<string | null>(null)
 
-  const loadWebsites = async () => {
+  const loadWebsites = async (preserveCurrentPage = false) => {
     try {
-      setLoading(true)
+      // Only show loading if not preserving current page (to avoid flicker during enrichment)
+      if (!preserveCurrentPage) {
+        setLoading(true)
+      }
       setError(null)
       const response = await listProspects(skip, limit)
       const data = Array.isArray(response?.data) ? response.data : 
@@ -33,7 +36,9 @@ export default function WebsitesTable() {
       setProspects([])
       setTotal(0)
     } finally {
-      setLoading(false)
+      if (!preserveCurrentPage) {
+        setLoading(false)
+      }
     }
   }
 
@@ -70,22 +75,49 @@ export default function WebsitesTable() {
     try {
       console.log(`🔄 Starting enrichment for ${domain} (ID: ${prospectId})...`)
       const result = await enrichProspectById(prospectId)
+      
+      // Optimistically update the prospect in the local state immediately
+      // This prevents the prospect from disappearing while we refresh
       if (result.success && result.email) {
         console.log(`✅ Email found for ${domain}: ${result.email}`)
+        
+        // Update the prospect in local state immediately
+        setProspects(prevProspects => 
+          prevProspects.map(p => 
+            p.id === prospectId 
+              ? { ...p, contact_email: result.email, contact_method: result.source || 'snov_io' }
+              : p
+          )
+        )
+        
         // Show success message
-        alert(`Email found: ${result.email}`)
-        await loadWebsites()
+        alert(`✅ Email found: ${result.email}\n\nSource: ${result.source || 'Snov.io'}\nConfidence: ${result.confidence || 'N/A'}`)
+        
+        // Refresh the list to get the latest data (preserve current page, no loading spinner)
+        await loadWebsites(true)
       } else {
         const message = result.message || result.error || 'No email found'
         console.warn(`⚠️ No email found for ${domain}: ${message}`)
+        
+        // Update the prospect to show it was attempted (even if no email found)
+        setProspects(prevProspects => 
+          prevProspects.map(p => 
+            p.id === prospectId 
+              ? { ...p, contact_method: 'enrichment_attempted' }
+              : p
+          )
+        )
+        
         // Show info message
-        alert(`No email found for ${domain}. ${message}`)
-        await loadWebsites()
+        alert(`⚠️ No email found for ${domain}.\n\n${message}\n\nThe website will remain in the list.`)
+        
+        // Refresh to get latest state (preserve current page, no loading spinner)
+        await loadWebsites(true)
       }
     } catch (error: any) {
       console.error(`❌ Error enriching ${domain}:`, error)
       // Show error message to user
-      alert(`Failed to enrich ${domain}: ${error.message || 'Unknown error'}`)
+      alert(`❌ Failed to enrich ${domain}:\n\n${error.message || 'Unknown error'}\n\nThe website will remain in the list.`)
     } finally {
       setEnrichingIds(prev => {
         const newSet = new Set(prev)
@@ -100,7 +132,7 @@ export default function WebsitesTable() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold text-gray-900">Discovered Websites</h2>
         <button
-          onClick={loadWebsites}
+          onClick={() => loadWebsites(false)}
           className="flex items-center space-x-2 px-3 py-2 bg-olive-600 text-white rounded-md hover:bg-olive-700"
         >
           <RefreshCw className="w-4 h-4" />
@@ -118,7 +150,7 @@ export default function WebsitesTable() {
           <p className="text-red-600 mb-2 font-semibold">Error loading websites</p>
           <p className="text-gray-600 text-sm">{error}</p>
           <button
-            onClick={loadWebsites}
+            onClick={() => loadWebsites(false)}
             className="mt-4 px-4 py-2 bg-olive-600 text-white rounded-md hover:bg-olive-700"
           >
             Retry

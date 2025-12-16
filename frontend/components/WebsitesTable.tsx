@@ -13,7 +13,6 @@ export default function WebsitesTable() {
   const limit = 50
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set())
   const [bulkEnriching, setBulkEnriching] = useState(false)
-
   const [error, setError] = useState<string | null>(null)
 
   const loadWebsites = async (preserveCurrentPage = false) => {
@@ -199,16 +198,20 @@ export default function WebsitesTable() {
           )}
         </div>
         <div className="flex items-center space-x-2">
-          {prospectsWithoutEmail > 0 && (
+          {prospects.length > 0 && (
             <button
               onClick={handleBulkEnrich}
-              disabled={bulkEnriching}
+              disabled={bulkEnriching || prospectsWithoutEmail === 0}
               className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                bulkEnriching
+                bulkEnriching || prospectsWithoutEmail === 0
                   ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
                   : 'bg-olive-600 text-white hover:bg-olive-700'
               }`}
-              title="Enrich all prospects without emails (service/brand intent only)"
+              title={
+                prospectsWithoutEmail === 0
+                  ? "All prospects already have emails"
+                  : "Enrich all prospects without emails (service/brand intent only)"
+              }
             >
               {bulkEnriching ? (
                 <>
@@ -218,7 +221,7 @@ export default function WebsitesTable() {
               ) : (
                 <>
                   <Zap className="w-4 h-4" />
-                  <span>Bulk Enrich ({prospectsWithoutEmail})</span>
+                  <span>Bulk Enrich {prospectsWithoutEmail > 0 && `(${prospectsWithoutEmail})`}</span>
                 </>
               )}
             </button>

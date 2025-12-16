@@ -14,6 +14,7 @@ export default function WebsitesTable() {
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set())
   const [bulkEnriching, setBulkEnriching] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showEnrichModal, setShowEnrichModal] = useState<{ show: boolean; maxProspects: number }>({ show: false, maxProspects: 0 })
 
   const loadWebsites = async (preserveCurrentPage = false) => {
     try {
@@ -135,38 +136,36 @@ export default function WebsitesTable() {
     }
   }
 
-  const handleBulkEnrich = async () => {
+  const handleBulkEnrich = () => {
     if (bulkEnriching) return
     
     const prospectsWithoutEmail = prospects.filter(p => !p.contact_email || p.contact_email.trim() === '')
     const count = prospectsWithoutEmail.length
     
     if (count === 0) {
-      alert('✅ All prospects already have emails!')
+      console.log('✅ All prospects already have emails!')
       return
     }
     
-    const maxProspects = prompt(
-      `Found ${count} prospects without emails.\n\nHow many would you like to enrich? (Max: ${count})`,
-      Math.min(count, 100).toString()
-    )
-    
-    if (!maxProspects || isNaN(parseInt(maxProspects))) {
+    // Show modal instead of prompt
+    setShowEnrichModal({ show: true, maxProspects: Math.min(count, 100) })
+  }
+
+  const confirmBulkEnrich = async () => {
+    const { maxProspects } = showEnrichModal
+    if (!maxProspects || maxProspects <= 0) {
+      setShowEnrichModal({ show: false, maxProspects: 0 })
       return
     }
     
-    const max = Math.min(parseInt(maxProspects), count)
-    
-    if (!confirm(`Start enrichment job for ${max} prospects?\n\nThis will only enrich prospects with service or brand intent.`)) {
-      return
-    }
-    
+    setShowEnrichModal({ show: false, maxProspects: 0 })
     setBulkEnriching(true)
+    
     try {
-      console.log(`🚀 Starting bulk enrichment job for ${max} prospects...`)
-      const result = await createEnrichmentJob(undefined, max)
+      console.log(`🚀 Starting bulk enrichment job for ${maxProspects} prospects...`)
+      const result = await createEnrichmentJob(undefined, maxProspects)
       console.log('✅ Enrichment job created:', result)
-      alert(`✅ Enrichment job started!\n\nJob ID: ${result.job_id}\nStatus: ${result.status}\n\nYou can track progress in the Jobs tab.`)
+      console.log(`✅ Enrichment job started! Job ID: ${result.job_id}, Status: ${result.status}`)
       
       // Refresh after a delay to see updated emails
       setTimeout(() => {
@@ -178,7 +177,7 @@ export default function WebsitesTable() {
       }, 2000)
     } catch (error: any) {
       console.error('❌ Failed to start enrichment job:', error)
-      alert(`❌ Failed to start enrichment job:\n\n${error.message || 'Unknown error'}`)
+      console.error(`❌ Failed to start enrichment job: ${error.message || 'Unknown error'}`)
     } finally {
       setBulkEnriching(false)
     }

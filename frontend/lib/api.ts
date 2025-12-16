@@ -495,20 +495,26 @@ export async function listJobs(skip = 0, limit = 50): Promise<Job[]> {
     }
     const data = await res.json()
     
-    // Validate response is an array
-    if (!Array.isArray(data)) {
-      console.warn('⚠️ listJobs: Response is not an array. Got:', typeof data, data)
-      // Try to extract array from response
-      if (data && typeof data === 'object') {
-        const jobs = data.jobs || data.data || data.items || []
-        if (Array.isArray(jobs)) {
-          return jobs
-        }
+    // Handle new response format: { data: Job[], total: number, skip: number, limit: number }
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      if (data.data && Array.isArray(data.data)) {
+        return data.data
       }
-      return [] // Return empty array instead of crashing
+      // Try other possible keys
+      const jobs = data.jobs || data.items || []
+      if (Array.isArray(jobs)) {
+        return jobs
+      }
+      console.warn('⚠️ listJobs: Response is not an array. Got:', typeof data, data)
+      return []
     }
     
-    return data
+    // If it's already an array, return it
+    if (Array.isArray(data)) {
+      return data
+    }
+    
+    return []
   } catch (error: any) {
     console.error('❌ Error in listJobs:', error)
     // Return empty array to prevent app crash

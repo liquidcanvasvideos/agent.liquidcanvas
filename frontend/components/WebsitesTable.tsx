@@ -372,6 +372,51 @@ export default function WebsitesTable() {
           </div>
         </>
       )}
+
+      {/* Bulk Enrich Modal */}
+      {showEnrichModal.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Bulk Enrich Prospects</h3>
+            <p className="text-gray-600 mb-4">
+              Found {prospectsWithoutEmail} prospects without emails.
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              This will only enrich prospects with <strong>service</strong> or <strong>brand</strong> intent. 
+              Blogs, media, and marketplaces will be skipped.
+            </p>
+            <div className="flex items-center space-x-3 mb-6">
+              <label className="text-sm font-medium text-gray-700">How many to enrich?</label>
+              <input
+                type="number"
+                min="1"
+                max={prospectsWithoutEmail}
+                defaultValue={showEnrichModal.maxProspects}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 0
+                  setShowEnrichModal({ show: true, maxProspects: Math.min(Math.max(1, value), prospectsWithoutEmail) })
+                }}
+                className="px-3 py-2 border border-gray-300 rounded-md w-24"
+              />
+              <span className="text-sm text-gray-500">(Max: {prospectsWithoutEmail})</span>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowEnrichModal({ show: false, maxProspects: 0 })}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmBulkEnrich}
+                className="px-4 py-2 text-white bg-olive-600 rounded-md hover:bg-olive-700"
+              >
+                Start Enrichment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

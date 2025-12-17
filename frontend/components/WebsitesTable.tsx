@@ -306,7 +306,11 @@ export default function WebsitesTable() {
                         {hasEmail ? (
                           <span className="text-green-700 font-medium">{prospect.contact_email}</span>
                         ) : (
-                          <span className="text-gray-500">No Email</span>
+                          <span className="text-gray-500 italic">
+                            {prospect.contact_method === 'no_email_found' 
+                              ? 'No email found on website' 
+                              : 'No Email'}
+                          </span>
                         )}
                       </td>
                     <td className="py-3 px-4">

@@ -432,60 +432,40 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
                                 search_stats["snov_calls_made"] += 1
                                 try:
                                     logger.info(f"🔍 [DISCOVERY] Enriching {domain} before saving (intent: {serp_intent})...")
-                                    # Pass page_url to enrichment so it can try that page first
+                                    # STRICT MODE: Pass page_url to enrichment
                                     enrich_result = await enrich_prospect_email(domain, None, normalized_url)
                                     
                                     if enrich_result:
-                                        enrich_status = enrich_result.get("status")
+                                        email_status = enrich_result.get("email_status", "no_email_found")
                                         
-                                        # Handle rate limits and retry status - DO NOT skip, mark for retry
-                                        if enrich_status in ["rate_limited", "pending_retry"]:
-                                            logger.warning(f"⚠️  [DISCOVERY] {domain} marked for retry (status: {enrich_status})")
-                                            # Still save prospect, but mark email as pending
-                                            contact_email = None  # Will be set later via retry
-                                            snov_payload = {
-                                                "status": enrich_status,
-                                                "error": enrich_result.get("error"),
-                                                "retry_needed": True
-                                            }
-                                        elif enrich_result.get("email"):
-                                            # Email found successfully
-                                            contact_email = enrich_result["email"]
-                                            # Store enrichment metadata
-                                            snov_payload = {
-                                                "email": contact_email,
-                                                "confidence": enrich_result.get("confidence", 0),
-                                                "source": enrich_result.get("source", "snov_io")
-                                            }
-                                            logger.info(f"✅ [DISCOVERY] Enriched {domain}: {contact_email}")
+                                        if email_status == "found":
+                                            # Email found on website
+                                            contact_email = enrich_result.get("primary_email")
+                                            snov_payload = enrich_result  # Store full result
+                                            logger.info(f"✅ [DISCOVERY] Enriched {domain}: {contact_email} (pages crawled: {len(enrich_result.get('pages_crawled', []))})")
                                         else:
-                                            # No email but not rate limited - mark for retry
-                                            logger.warning(f"⚠️  [DISCOVERY] No email found for {domain}, marking for retry")
+                                            # No email found on website
                                             contact_email = None
-                                            snov_payload = {
-                                                "status": "pending_retry",
-                                                "error": enrich_result.get("error", "No email found"),
-                                                "retry_needed": True
-                                            }
+                                            snov_payload = enrich_result  # Store full result with "no_email_found" status
+                                            logger.warning(f"⚠️  [DISCOVERY] No email found on website for {domain} (pages crawled: {len(enrich_result.get('pages_crawled', []))})")
                                     else:
-                                        # Enrichment returned None - mark for retry
-                                        logger.warning(f"⚠️  [DISCOVERY] Enrichment returned None for {domain}, marking for retry")
+                                        # Enrichment service returned None (should not happen)
+                                        logger.error(f"❌ [DISCOVERY] Enrichment service returned None for {domain}")
                                         contact_email = None
                                         snov_payload = {
-                                            "status": "pending_retry",
-                                            "error": "Enrichment returned no result",
-                                            "retry_needed": True
+                                            "email_status": "no_email_found",
+                                            "error": "Enrichment service returned None",
+                                            "source": "error",
                                         }
                                         
                                 except Exception as e:
-                                    # DEFENSIVE: Log error but DO NOT skip - mark for retry instead
+                                    # DEFENSIVE: Log error but DO NOT skip - save prospect without email
                                     logger.error(f"❌ [DISCOVERY] Enrichment failed for {domain}: {e}", exc_info=True)
-                                    logger.warning(f"⚠️  [DISCOVERY] Marking {domain} for retry due to enrichment error")
                                     contact_email = None
                                     snov_payload = {
-                                        "status": "pending_retry",
+                                        "email_status": "no_email_found",
                                         "error": str(e),
-                                        "retry_needed": True
+                                        "source": "error",
                                     }
                             else:
                                 # Intent doesn't qualify - skip enrichment, save without email

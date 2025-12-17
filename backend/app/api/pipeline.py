@@ -169,7 +169,7 @@ async def approve_prospects(
             prospect.approval_status = "rejected"
             rejected_count += 1
         elif request.action == "delete":
-            await db.delete(prospect)
+            db.delete(prospect)
             deleted_count += 1
     
     await db.commit()

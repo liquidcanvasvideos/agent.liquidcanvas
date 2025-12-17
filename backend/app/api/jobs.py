@@ -14,7 +14,6 @@ from app.db.database import get_db
 from app.api.auth import get_current_user_optional
 from app.models.job import Job
 from app.schemas.job import JobResponse, JobCreate, JobListResponse
-from typing import List
 
 logger = logging.getLogger(__name__)
 

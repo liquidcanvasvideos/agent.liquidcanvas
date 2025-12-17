@@ -251,19 +251,14 @@ async def process_enrichment_job(job_id: str) -> Dict[str, Any]:
                             f"❌ [ENRICHMENT] [{idx}/{len(prospects)}] Snov.io failed for {domain}: {error_msg}"
                         )
 
-                    # If provider returned nothing usable, fall back to a low‑confidence guess
+                    # If provider returned nothing usable, don't use generic guesser
+                    # The enrichment service already tried: Snov.io, local scraping, and pattern generation
+                    # If all of those failed, we should NOT save a generic "info@" email
                     if not new_email:
-                        guessed_email = f"info@{domain}" if domain else None
-                        if guessed_email:
-                            new_email = guessed_email
-                            new_confidence = 10.0  # very low confidence to ensure provider matches win
-                            provider_source = "guess"
-                            fallback_used = True
-                            logger.info(
-                                f"🟡 [ENRICHMENT] [{idx}/{len(prospects)}] Using fallback guesser for {domain}: {guessed_email}"
-                            )
-                        else:
-                            no_email_count += 1
+                        no_email_count += 1
+                        logger.info(
+                            f"⚠️  [ENRICHMENT] [{idx}/{len(prospects)}] No email found for {domain} after all methods (Snov.io, scraping, pattern generation)"
+                        )
 
                     # Decide whether to update existing email
                     if new_email:

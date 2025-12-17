@@ -597,47 +597,41 @@ async def get_pipeline_status(
 ):
     """
     Get overall pipeline status - counts for each step
-    Uses canonical discovery_status values: NEW, DISCOVERED, SCRAPED, VERIFIED, OUTREACH_READY, CONTACTED
+    BULLETPROOF: Only queries the four guaranteed columns that exist via startup hook
+    Returns 200 even with zero prospects or missing optional columns
     """
-    # Count prospects at each step using canonical statuses
+    # Count prospects at each step using ONLY the four guaranteed columns
     # Step 1: DISCOVERED (canonical status for discovered websites)
     discovered = await db.execute(
         select(func.count(Prospect.id)).where(Prospect.discovery_status == "DISCOVERED")
     )
     discovered_count = discovered.scalar() or 0
     
+    # Step 2: APPROVED (approval_status = "approved")
     approved = await db.execute(
         select(func.count(Prospect.id)).where(Prospect.approval_status == "approved")
     )
     approved_count = approved.scalar() or 0
     
+    # Step 3: SCRAPED (scrape_status = "SCRAPED")
     scraped = await db.execute(
         select(func.count(Prospect.id)).where(Prospect.scrape_status == "SCRAPED")
     )
     scraped_count = scraped.scalar() or 0
     
+    # Step 4: VERIFIED (verification_status = "verified")
     verified = await db.execute(
         select(func.count(Prospect.id)).where(Prospect.verification_status == "verified")
     )
     verified_count = verified.scalar() or 0
     
-    drafted = await db.execute(
-        select(func.count(Prospect.id)).where(Prospect.draft_status == "drafted")
-    )
-    drafted_count = drafted.scalar() or 0
-    
-    sent = await db.execute(
-        select(func.count(Prospect.id)).where(Prospect.send_status == "sent")
-    )
-    sent_count = sent.scalar() or 0
-    
+    # Return only the four guaranteed counts
+    # All other steps (draft, send) are optional and not queried to prevent 500 errors
     return {
         "discovered": discovered_count,
         "approved": approved_count,
         "scraped": scraped_count,
         "verified": verified_count,
         "reviewed": verified_count,  # Same as verified for review step
-        "drafted": drafted_count,
-        "sent": sent_count,
     }
 

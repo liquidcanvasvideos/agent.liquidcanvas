@@ -23,16 +23,17 @@ class Prospect(Base):
     da_est = Column(Numeric(5, 2))  # Domain Authority estimate (0-100)
     score = Column(Numeric(5, 2), default=0)  # Overall prospect score
     
-    # STRICT PIPELINE STATUS FIELDS
-    # Canonical statuses: NEW, DISCOVERED, SCRAPED, VERIFIED, OUTREACH_READY, CONTACTED
+    # STRICT PIPELINE STATUS FIELDS - BULLETPROOF SCHEMA
+    # These four columns are CRITICAL and MUST exist in database
+    # Missing any causes /api/pipeline/status to return 500 errors
     # discovery_status: Required to enforce strict step-by-step pipeline progression
-    # Without this, we cannot block steps or track where prospects are in the discovery phase
     discovery_status = Column(String, nullable=False, server_default='NEW', index=True)
+    # scrape_status: Tracks scraping step - required for pipeline status queries
+    scrape_status = Column(String, nullable=False, server_default='PENDING', index=True)  # PENDING, SCRAPED, NO_EMAIL_FOUND, failed
     # approval_status: Tracks human selection step - required for pipeline progression
-    approval_status = Column(String, nullable=False, server_default='pending', index=True)  # pending, approved, rejected, deleted
-    scrape_status = Column(String, default="pending", index=True)  # pending, SCRAPED, NO_EMAIL_FOUND, failed
+    approval_status = Column(String, nullable=False, server_default='PENDING', index=True)  # PENDING, approved, rejected, deleted
     # verification_status: Tracks email verification step - required for pipeline status queries
-    verification_status = Column(String, nullable=False, server_default='unverified', index=True)  # pending, verified, unverified, failed
+    verification_status = Column(String, nullable=False, server_default='UNVERIFIED', index=True)  # PENDING, verified, unverified, UNVERIFIED, failed
     draft_status = Column(String, default="pending", index=True)  # pending, drafted, failed
     send_status = Column(String, default="pending", index=True)  # pending, sent, failed
     

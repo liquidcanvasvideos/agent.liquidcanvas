@@ -270,13 +270,15 @@ async def startup():
                 else:
                     logger.info("✅ serp_intent columns already exist")
                 
-                # CRITICAL FIX: Ensure ALL pipeline status columns exist
+                # BULLETPROOF FIX: Ensure ALL pipeline status columns exist
                 # Required columns for /api/pipeline/status to work without 500 errors
                 # Format: (column_name, sql_type, default_value, should_be_not_null)
+                # These four columns are CRITICAL - missing any causes 500 errors
                 required_pipeline_columns = [
                     ("discovery_status", "VARCHAR", "NEW", True),
-                    ("approval_status", "VARCHAR", "pending", True),
-                    ("verification_status", "VARCHAR", "unverified", True),
+                    ("scrape_status", "VARCHAR", "PENDING", True),
+                    ("approval_status", "VARCHAR", "PENDING", True),
+                    ("verification_status", "VARCHAR", "UNVERIFIED", True),
                 ]
                 
                 for column_name, sql_type, default_value, should_be_not_null in required_pipeline_columns:

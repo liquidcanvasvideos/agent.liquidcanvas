@@ -144,34 +144,58 @@ async def enrich_prospect_by_id(
         if prospect.serp_intent and prospect.serp_intent not in ["service", "brand"]:
             logger.warning(f"⚠️  [ENRICHMENT API] Enriching prospect {prospect_id} with non-partner intent: {prospect.serp_intent}")
         
-        # Enrich using domain and page_url (if available)
+        # STRICT MODE: Enrich using domain and page_url
         from app.services.enrichment import enrich_prospect_email
         enrich_result = await enrich_prospect_email(prospect.domain, None, prospect.page_url)
         
-        if enrich_result and enrich_result.get("email"):
-            # Update prospect with email
-            prospect.contact_email = enrich_result["email"]
-            prospect.contact_method = enrich_result.get("source", "snov_io")
-            prospect.snov_payload = enrich_result  # Use snov_payload instead of hunter_payload
+        if not enrich_result:
+            # Enrichment service returned None (should not happen)
+            logger.error(f"❌ [ENRICHMENT API] Enrichment service returned None for {prospect.domain}")
+            enrich_result = {
+                "emails": [],
+                "primary_email": None,
+                "email_status": "no_email_found",
+                "pages_crawled": [],
+                "emails_by_page": {},
+                "snov_emails_accepted": 0,
+                "snov_emails_rejected": 0,
+                "success": False,
+                "source": "error",
+                "error": "Enrichment service returned None",
+            }
+        
+        email_status = enrich_result.get("email_status", "no_email_found")
+        primary_email = enrich_result.get("primary_email")
+        
+        if email_status == "found" and primary_email:
+            # Email found on website - update prospect
+            prospect.contact_email = primary_email
+            prospect.contact_method = enrich_result.get("source", "html_scraping")
+            prospect.snov_payload = enrich_result
             await db.commit()
             await db.refresh(prospect)
             
+            pages_crawled = len(enrich_result.get("pages_crawled", []))
             return {
                 "success": True,
-                "email": enrich_result["email"],
-                "name": enrich_result.get("name"),
-                "company": enrich_result.get("company"),
-                "confidence": enrich_result.get("confidence"),
+                "email": primary_email,
+                "name": None,
+                "company": None,
+                "confidence": 50.0,
                 "domain": prospect.domain,
-                "source": enrich_result.get("source", "snov_io"),
-                "message": f"Email enriched for {prospect.domain}"
+                "source": enrich_result.get("source", "html_scraping"),
+                "message": f"Email found on website: {primary_email}",
+                "pages_crawled": pages_crawled,
             }
         else:
-            # No email found, but update snov_payload for retry
-            if enrich_result:
-                prospect.snov_payload = enrich_result
-                await db.commit()
+            # No email found on website - store "no_email_found" status
+            prospect.contact_email = None
+            prospect.contact_method = "no_email_found"
+            prospect.snov_payload = enrich_result
+            await db.commit()
+            await db.refresh(prospect)
             
+            pages_crawled = len(enrich_result.get("pages_crawled", []))
             return {
                 "success": False,
                 "email": None,
@@ -180,7 +204,9 @@ async def enrich_prospect_by_id(
                 "confidence": None,
                 "domain": prospect.domain,
                 "source": None,
-                "message": f"No email found for {prospect.domain}. Will retry later."
+                "message": f"No email found on website for {prospect.domain}",
+                "pages_crawled": pages_crawled,
+                "error": enrich_result.get("error", "No email found on website"),
             }
             
     except HTTPException:

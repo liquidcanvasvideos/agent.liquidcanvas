@@ -144,38 +144,88 @@ async def process_enrichment_job(job_id: str) -> Dict[str, Any]:
                     logger.info(f"🔍 [ENRICHMENT] [{idx}/{len(prospects)}] Starting enrichment for {domain} (id: {prospect_id})")
                     logger.info(f"📥 [ENRICHMENT] Input - domain: {domain}, prospect_id: {prospect_id}")
                     
-                    # Call enrichment service (which handles Snov.io + local scraping)
+                    # Call STRICT MODE enrichment service
                     try:
                         from app.services.enrichment import enrich_prospect_email
                         enrich_result = await enrich_prospect_email(domain, None, prospect.page_url)
                         
-                        # Convert enrichment result to snov_result format for compatibility
-                        if enrich_result and enrich_result.get("email"):
+                        # STRICT MODE: Handle new response format
+                        if not enrich_result:
+                            logger.error(f"❌ [ENRICHMENT] Enrichment service returned None for {domain}")
+                            enrich_result = {
+                                "emails": [],
+                                "primary_email": None,
+                                "email_status": "no_email_found",
+                                "pages_crawled": [],
+                                "emails_by_page": {},
+                                "snov_emails_accepted": 0,
+                                "snov_emails_rejected": 0,
+                                "success": False,
+                                "source": "no_email_found",
+                            }
+                        
+                        # Log enrichment results
+                        email_status = enrich_result.get("email_status", "no_email_found")
+                        emails_found = enrich_result.get("emails", [])
+                        pages_crawled = enrich_result.get("pages_crawled", [])
+                        snov_accepted = enrich_result.get("snov_emails_accepted", 0)
+                        snov_rejected = enrich_result.get("snov_emails_rejected", 0)
+                        
+                        logger.info(f"📊 [ENRICHMENT] [{idx}/{len(prospects)}] Enrichment result for {domain}:")
+                        logger.info(f"   Status: {email_status}")
+                        logger.info(f"   Emails found: {len(emails_found)}")
+                        logger.info(f"   Pages crawled: {len(pages_crawled)}")
+                        logger.info(f"   Snov.io: {snov_accepted} accepted, {snov_rejected} rejected")
+                        
+                        if email_status == "no_email_found":
+                            logger.warning(f"⚠️  [ENRICHMENT] [{idx}/{len(prospects)}] NO EMAIL FOUND on website for {domain}")
+                            # Store "no_email_found" status
+                            prospect.contact_email = None
+                            prospect.contact_method = "no_email_found"
+                            prospect.snov_payload = {
+                                "email_status": "no_email_found",
+                                "pages_crawled": pages_crawled,
+                                "emails_by_page": enrich_result.get("emails_by_page", {}),
+                                "snov_emails_accepted": snov_accepted,
+                                "snov_emails_rejected": snov_rejected,
+                                "source": enrich_result.get("source", "no_email_found"),
+                            }
+                            no_email_count += 1
+                            await db.commit()
+                            await db.refresh(prospect)
+                            continue
+                        
+                        # Convert to legacy format for compatibility
+                        primary_email = enrich_result.get("primary_email")
+                        if primary_email:
                             snov_result = {
                                 "success": True,
                                 "emails": [{
-                                    "value": enrich_result["email"],
-                                    "confidence_score": enrich_result.get("confidence", 50.0),
-                                    "first_name": None,
-                                    "last_name": None,
-                                    "company": enrich_result.get("company")
-                                }]
+                                    "value": email,
+                                    "confidence_score": 50.0,  # Default confidence for website-found emails
+                                } for email in emails_found],
                             }
                         else:
                             snov_result = {"success": False, "emails": []}
+                        
                         snov_time = (time.time() - prospect_start_time) * 1000
-                        logger.info(f"⏱️  [ENRICHMENT] Snov.io API call completed in {snov_time:.0f}ms")
-                    except RateLimitError as rate_err:
-                        # Handle rate limit errors - log and continue with local scraping
+                        logger.info(f"⏱️  [ENRICHMENT] Enrichment completed in {snov_time:.0f}ms")
+                        
+                    except Exception as enrich_err:
                         snov_time = (time.time() - prospect_start_time) * 1000
-                        logger.warning(f"⚠️  [ENRICHMENT] Rate limit error after {snov_time:.0f}ms: {rate_err.message}")
-                        if rate_err.error_id == "restricted_account":
-                            logger.error(f"🚫 [ENRICHMENT] Snov.io account restricted. Please check Snov account.")
-                        snov_result = {"success": False, "error": rate_err.message, "domain": domain, "status": rate_err.error_id}
-                    except Exception as snov_err:
-                        snov_time = (time.time() - prospect_start_time) * 1000
-                        logger.error(f"❌ [ENRICHMENT] Enrichment failed after {snov_time:.0f}ms: {snov_err}", exc_info=True)
-                        snov_result = {"success": False, "error": str(snov_err), "domain": domain}
+                        logger.error(f"❌ [ENRICHMENT] Enrichment failed after {snov_time:.0f}ms: {enrich_err}", exc_info=True)
+                        # On error, mark as no_email_found
+                        prospect.contact_email = None
+                        prospect.contact_method = "no_email_found"
+                        prospect.snov_payload = {
+                            "email_status": "no_email_found",
+                            "error": str(enrich_err),
+                            "source": "error",
+                        }
+                        no_email_count += 1
+                        await db.commit()
+                        await db.refresh(prospect)
+                        continue
                     
                     # Helper: compute previous best confidence from stored snov_payload
                     previous_confidence: Optional[float] = None
@@ -260,64 +310,44 @@ async def process_enrichment_job(job_id: str) -> Dict[str, Any]:
                             f"⚠️  [ENRICHMENT] [{idx}/{len(prospects)}] No email found for {domain} after all methods (Snov.io, scraping, pattern generation)"
                         )
 
-                    # Decide whether to update existing email
+                    # STRICT MODE: Save email if found, otherwise already handled above
                     if new_email:
-                        # Normalize confidence numbers
-                        new_conf_val = float(new_confidence or 0)
-                        old_conf_val = float(previous_confidence or 0)
-
-                        should_update = False
-                        reason = ""
-
-                        if not (prospect.contact_email and str(prospect.contact_email).strip()):
-                            should_update = True
-                            reason = "no_previous_email"
-                        elif prospect.contact_method != "snov_io" and provider_source == "snov_io":
-                            # Provider match beats guessed / unknown sources
-                            should_update = True
-                            reason = f"provider_preferred_over_{prospect.contact_method or 'unknown'}"
-                        elif new_conf_val > old_conf_val:
-                            should_update = True
-                            reason = f"higher_confidence ({new_conf_val} > {old_conf_val})"
-
-                        if should_update:
-                            # Final validation before saving
-                            if not is_plausible_email(new_email):
-                                logger.warning(f"🚫 [ENRICHMENT] Rejecting implausible email before save: {new_email}")
-                                no_email_count += 1
-                                continue
-                            
-                            old_email_log = str(prospect.contact_email) if prospect.contact_email else None
-                            # Get email classification from enrichment result if available
-                            email_classification = enrich_result.get("email_classification") if enrich_result else None
-                            logger.info(
-                                f"✅ [ENRICHMENT] [{idx}/{len(prospects)}] Updating email for {domain}: "
-                                f"{old_email_log or 'None'} (conf={old_conf_val}) "
-                                f"-> {new_email} (conf={new_conf_val}), source={provider_source}, classification={email_classification}, reason={reason}"
-                            )
-                            prospect.contact_email = new_email
-                            prospect.contact_method = provider_source
-                            prospect.snov_payload = snov_result
-                            # V1: Mark as enriched if we have at least one email
-                            # Store classification in snov_payload for future use
-                            if prospect.snov_payload and isinstance(prospect.snov_payload, dict):
-                                prospect.snov_payload["email_classification"] = email_classification
-                            enriched_count += 1
-                        else:
-                            logger.info(
-                                f"ℹ️  [ENRICHMENT] [{idx}/{len(prospects)}] Keeping existing email for {domain}: "
-                                f"{prospect.contact_email} (conf={old_conf_val}) over "
-                                f"candidate {new_email} (conf={new_conf_val}), source={provider_source}"
-                            )
-                            # Still store latest payload for debugging / future improvements
-                            prospect.snov_payload = snov_result
-                    else:
-                        # Nothing usable, just persist payload for diagnostics
-                        logger.warning(
-                            f"⚠️  [ENRICHMENT] [{idx}/{len(prospects)}] No usable email found for {domain} - enrichment service returned no email"
+                        # Final validation before saving
+                        if not is_plausible_email(new_email):
+                            logger.warning(f"🚫 [ENRICHMENT] Rejecting implausible email before save: {new_email}")
+                            prospect.contact_email = None
+                            prospect.contact_method = "no_email_found"
+                            prospect.snov_payload = enrich_result
+                            no_email_count += 1
+                            await db.commit()
+                            await db.refresh(prospect)
+                            continue
+                        
+                        # Save the email
+                        old_email_log = str(prospect.contact_email) if prospect.contact_email else None
+                        logger.info(
+                            f"✅ [ENRICHMENT] [{idx}/{len(prospects)}] Saving email for {domain}: "
+                            f"{old_email_log or 'None'} -> {new_email}, source={provider_source}, "
+                            f"pages_crawled={len(enrich_result.get('pages_crawled', []))}, "
+                            f"total_emails={len(enrich_result.get('emails', []))}"
                         )
-                        # Log what the enrichment service actually returned for debugging
-                        if enrich_result:
+                        prospect.contact_email = new_email
+                        prospect.contact_method = provider_source
+                        # Store full enrichment result in snov_payload
+                        prospect.snov_payload = enrich_result
+                        enriched_count += 1
+                    else:
+                        # This should not happen (handled above), but log it
+                        logger.error(
+                            f"❌ [ENRICHMENT] [{idx}/{len(prospects)}] Unexpected: new_email is None but email_status is 'found' for {domain}"
+                        )
+                        prospect.contact_email = None
+                        prospect.contact_method = "no_email_found"
+                        prospect.snov_payload = enrich_result
+                        no_email_count += 1
+                    
+                    # Log what the enrichment service actually returned for debugging
+                    if enrich_result:
                             logger.debug(f"   Enrichment result: {enrich_result}")
                         else:
                             logger.debug(f"   Enrichment service returned None")

@@ -1,33 +1,19 @@
 """
-Standalone enrichment service
-Can be called from discovery or as a separate job.
+STRICT MODE enrichment service - ONLY saves emails found explicitly on websites.
 
-Returns a dict compatible with the frontend EnrichmentResult shape
-for successful lookups:
-
-{
-    "email": str,
-    "name": str | None,
-    "company": str | None,
-    "confidence": float,
-    "domain": str,
-    "success": bool,
-    "source": str | None,
-    "error": str | None,
-    "status": str | None,  # "rate_limited", "pending_retry", etc.
-}
-
-or None when no email candidate could be found.
+Rules:
+- Emails must be extracted from actual HTML content
+- Snov.io emails are ONLY accepted if source = "website" is explicitly stated
+- NO pattern generation, NO guessing, NO fallbacks
+- If no email found → return "no_email_found" status
 """
 import logging
 import time
 import re
 import httpx
-from typing import Optional, Dict, Any, List
-from app.clients.snov import SnovIOClient
+from typing import Optional, Dict, Any, List, Set
 from app.utils.domain import normalize_domain, validate_domain
 from app.utils.email_validation import is_plausible_email
-from app.services.provider_state import get_provider_state
 from app.services.exceptions import RateLimitError
 
 logger = logging.getLogger(__name__)
@@ -48,98 +34,72 @@ def _extract_emails_from_html(html_content: str, domain: Optional[str] = None) -
     - 50: Other valid email
     - 0: Filtered out (invalid/false positive)
     """
-    emails_with_sources = []
+    if not html_content:
+        return []
     
-    # Method 1: Extract from href="mailto:" links (highest priority)
-    mailto_pattern = re.compile(r'mailto:([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})', re.IGNORECASE)
-    mailto_matches = mailto_pattern.findall(html_content)
-    for email in mailto_matches:
-        email_lower = email.lower().strip()
-        if email_lower:
-            # Check if matches domain
-            priority = 90
-            if domain and domain.lower() in email_lower:
-                priority = 100  # Mailto + domain match = highest priority
-            emails_with_sources.append((email_lower, priority, 'mailto'))
+    emails_found: Set[str] = set()
+    emails_with_priority: List[tuple[str, int]] = []
     
-    # Method 2: Standard email regex
-    email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
-    found_emails = email_pattern.findall(html_content)
+    # Extract domain for matching
+    domain_lower = domain.lower() if domain else None
     
-    # Method 3: Decode HTML entities (e.g., &#64; for @, &#46; for .)
-    import html
-    decoded_html = html.unescape(html_content)
-    decoded_emails = email_pattern.findall(decoded_html)
-    found_emails.extend(decoded_emails)
-    
-    # Method 4: Handle obfuscated emails (e.g., "contact at domain dot com")
-    # Only process if the pattern already looks email-like
-    obfuscated_pattern = re.compile(
-        r'([a-z0-9._%+-]+)\s*(?:at|@|\[at\]|\(at\))\s*([a-z0-9.-]+)\s*(?:dot|\.|\[dot\]|\(dot\))\s*([a-z]{2,})',
-        re.IGNORECASE
-    )
-    obfuscated_matches = obfuscated_pattern.findall(html_content)
-    for match in obfuscated_matches:
-        if len(match) == 3:
-            email = f"{match[0]}@{match[1]}.{match[2]}"
-            # Only add if it's plausible (filters out garbage)
-            if is_plausible_email(email):
-                found_emails.append(email.lower())
-    
-    # Common contact email prefixes (higher priority)
-    common_contact_prefixes = ['info', 'contact', 'support', 'hello', 'hi', 'sales', 'help', 'inquiry', 'enquiry', 'admin', 'team']
-    
-    # Process and score all found emails
-    seen_emails = set()
-    for email in found_emails:
-        email_lower = email.lower().strip()
-        
-        # Skip if already processed (from mailto)
-        if email_lower in seen_emails:
-            continue
-        seen_emails.add(email_lower)
-        
-        # Skip invalid emails
-        if not email_lower or '@' not in email_lower:
-            continue
-        
-        # Use strict plausibility check (filters out .css, .jpg, CSS selectors, etc.)
-        if not is_plausible_email(email_lower):
-            logger.debug(f"🚫 [ENRICHMENT] Discarding implausible email candidate: {email_lower}")
-            continue
-        
-        # Calculate priority score
-        priority = 50  # Default priority
-        local_part = parts[0]
-        email_domain = domain_part
-        
-        # Check if email domain matches the website domain
-        if domain:
-            domain_lower = domain.lower().replace('www.', '')
-            if domain_lower in email_domain or email_domain in domain_lower:
-                priority = 70  # Domain match
-                # Check if it's also a common contact email
-                if any(prefix in local_part for prefix in common_contact_prefixes):
-                    priority = 80  # Domain match + common contact email
+    # Method 1: Extract from mailto: links (highest priority)
+    mailto_pattern = r'mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
+    mailto_matches = re.finditer(mailto_pattern, html_content, re.IGNORECASE)
+    for match in mailto_matches:
+        email = match.group(1).lower().strip()
+        if email not in emails_found and is_plausible_email(email):
+            emails_found.add(email)
+            # Check if email matches domain
+            if domain_lower and domain_lower in email:
+                priority = 100  # mailto + domain match
             else:
-                # Email domain doesn't match website domain - lower priority but still valid
-                # Only include if it's a common contact email
-                if any(prefix in local_part for prefix in common_contact_prefixes):
-                    priority = 60  # Common contact email but different domain
-                else:
-                    # Different domain and not a common contact email - likely false positive
-                    continue
+                priority = 90  # mailto only
+            emails_with_priority.append((email, priority))
+    
+    # Method 2: Extract plain email addresses from text
+    # More restrictive pattern to avoid false positives
+    email_pattern = r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
+    text_matches = re.finditer(email_pattern, html_content, re.IGNORECASE)
+    
+    common_contact_emails = ['info', 'contact', 'support', 'hello', 'hi', 'sales', 'help', 'admin', 'team']
+    
+    for match in text_matches:
+        email = match.group(0).lower().strip()
+        if email in emails_found:
+            continue
         
-        emails_with_sources.append((email_lower, priority, 'html'))
+        if not is_plausible_email(email):
+            continue
+        
+        # Skip common false positives
+        if any(skip in email for skip in ['example.com', 'test@', 'noreply', 'no-reply', 'donotreply']):
+            continue
+        
+        emails_found.add(email)
+        
+        # Calculate priority
+        local_part = email.split('@')[0]
+        if domain_lower and domain_lower in email:
+            if local_part in common_contact_emails:
+                priority = 80  # domain match + common contact
+            else:
+                priority = 70  # domain match
+        elif local_part in common_contact_emails:
+            priority = 60  # common contact
+        else:
+            priority = 50  # other valid email
+        
+        emails_with_priority.append((email, priority))
     
-    # Sort by priority (highest first), then remove duplicates keeping highest priority
-    emails_with_sources.sort(key=lambda x: x[1], reverse=True)
+    # Sort by priority (highest first)
+    emails_with_priority.sort(key=lambda x: x[1], reverse=True)
     
-    # Remove duplicates, keeping highest priority version
-    seen = set()
+    # Filter out duplicates and invalid emails
     filtered = []
-    for email, priority, source in emails_with_sources:
-        if email not in seen:
+    seen = set()
+    for email, priority in emails_with_priority:
+        if email not in seen and is_plausible_email(email):
             seen.add(email)
             filtered.append((email, priority))
     
@@ -190,104 +150,16 @@ async def _scrape_email_from_url(url: str, domain: Optional[str] = None) -> Opti
     return None
 
 
-def _classify_email(email: str) -> str:
+async def _scrape_emails_from_domain(domain: str, page_url: Optional[str] = None) -> Dict[str, List[str]]:
     """
-    Classify an email address as generic, role_based, or personal.
+    Scrape emails from a domain by trying multiple common contact page URLs.
+    Returns dict with page_url -> list of emails found.
     
-    Args:
-        email: Email address (e.g., "info@example.com")
-    
-    Returns:
-        Classification: "generic", "role_based", or "personal"
-    """
-    if not email or "@" not in email:
-        return "generic"
-    
-    local_part = email.split("@")[0].lower()
-    
-    # Generic contact emails (most common)
-    generic_patterns = ['info', 'contact', 'hello', 'hi', 'general', 'inquiry', 'enquiry', 'mail', 'email']
-    if local_part in generic_patterns:
-        return "generic"
-    
-    # Role-based emails (business functions)
-    role_patterns = ['support', 'sales', 'help', 'admin', 'team', 'marketing', 'press', 'media', 'pr', 
-                     'business', 'service', 'services', 'customerservice', 'customer-service',
-                     'publicrelations', 'public-relations', 'office', 'main', 'reach', 'connect']
-    if local_part in role_patterns:
-        return "role_based"
-    
-    # Personal emails (name-based patterns)
-    # If it contains dots, hyphens, or looks like a name, it's likely personal
-    if '.' in local_part or '-' in local_part or len(local_part.split()) > 1:
-        # Check if it looks like firstname.lastname or firstnamelastname
-        if any(char.isalpha() for char in local_part):
-            return "personal"
-    
-    # Default to generic if unclear
-    return "generic"
-
-
-def _generate_email_patterns(domain: str, person_name: Optional[str] = None) -> List[str]:
-    """
-    Generate common email patterns for a domain.
-    Prioritizes generic contact emails first (V1 requirement: at least one reachable email).
-    
-    Args:
-        domain: Domain name (e.g., "example.com")
-        person_name: Optional person name for personalized patterns
-    
-    Returns:
-        List of generated email addresses, ordered by priority (generic first)
-    """
-    if not domain or not validate_domain(domain):
-        return []
-    
-    patterns = []
-    
-    # Priority 1: Most common generic contact emails (V1 requirement)
-    high_priority_generic = ['info', 'contact', 'hello', 'support']
-    for prefix in high_priority_generic:
-        patterns.append(f"{prefix}@{domain}")
-    
-    # Priority 2: Other common contact emails
-    common_prefixes = [
-        'sales', 'help', 'admin', 'team', 'hi', 'inquiry', 'enquiry', 
-        'general', 'office', 'main', 'mail', 'email', 'reach', 'connect',
-        'getintouch', 'get-in-touch', 'reachout', 'business', 'service', 
-        'services', 'customerservice', 'customer-service', 'marketing', 
-        'press', 'media', 'pr', 'publicrelations', 'public-relations'
-    ]
-    for prefix in common_prefixes:
-        if f"{prefix}@{domain}" not in patterns:  # Avoid duplicates
-            patterns.append(f"{prefix}@{domain}")
-    
-    # Priority 3: Personalized patterns if name provided
-    if person_name:
-        name_parts = person_name.strip().lower().split()
-        if len(name_parts) >= 1:
-            first_name = name_parts[0]
-            patterns.append(f"{first_name}@{domain}")
-            
-            if len(name_parts) >= 2:
-                last_name = name_parts[1]
-                patterns.append(f"{first_name}.{last_name}@{domain}")
-                patterns.append(f"{first_name}{last_name}@{domain}")
-    
-    return patterns
-
-
-async def _scrape_email_from_domain(domain: str, page_url: Optional[str] = None) -> Optional[str]:
-    """
-    Scrape email from a domain by trying multiple common contact page URLs.
-    Returns first valid email found, or None.
-    
-    Tries in order:
-    1. Provided page_url (if available)
-    2. Homepage
-    3. Common contact page paths
+    STRICT MODE: Only returns emails found in actual HTML content.
     """
     urls_to_try = []
+    pages_crawled = []
+    emails_by_page: Dict[str, List[str]] = {}
     
     # Priority 1: Use the page_url from prospect if available
     if page_url:
@@ -297,64 +169,97 @@ async def _scrape_email_from_domain(domain: str, page_url: Optional[str] = None)
     urls_to_try.append(f"https://{domain}")
     urls_to_try.append(f"http://{domain}")
     
-    # Priority 3: Common contact page paths (expanded list)
+    # Priority 3: Common contact page paths
     common_paths = [
-        "/contact",
-        "/contact-us",
-        "/contactus",
-        "/get-in-touch",
-        "/getintouch",
-        "/reach-us",
-        "/reachus",
-        "/about",
-        "/about-us",
-        "/aboutus",
-        "/contact.html",
-        "/contact.php",
-        "/contact-page",
-        "/contactus.html",
-        "/get-in-touch.html",
-        "/reach-out",
-        "/reachout",
-        "/connect",
-        "/connect-with-us",
-        "/email-us",
-        "/email",
-        "/mail",
-        "/mail-us",
-        "/support",
-        "/help",
-        "/help-center",
-        "/faq",
-        "/faqs",
+        "/contact", "/contact-us", "/contactus", "/get-in-touch", "/getintouch",
+        "/reach-us", "/reachus", "/about", "/about-us", "/aboutus",
+        "/contact.html", "/contact.php", "/contact-page", "/contactus.html",
+        "/get-in-touch.html", "/reach-out", "/reachout", "/connect",
+        "/connect-with-us", "/email-us", "/email", "/mail", "/mail-us",
+        "/support", "/help", "/help-center", "/faq", "/faqs", "/team"
     ]
     
     for path in common_paths:
         urls_to_try.append(f"https://{domain}{path}")
         urls_to_try.append(f"http://{domain}{path}")
     
-    logger.info(f"🔍 [SCRAPING] Trying {len(urls_to_try)} URLs for {domain}")
+    logger.info(f"🔍 [SCRAPING] Will try {len(urls_to_try)} URLs for {domain}")
     
-    # Try each URL until we find an email
+    # Try each URL until we find emails
     for url in urls_to_try:
-        email = await _scrape_email_from_url(url, domain)
-        if email:
-            logger.info(f"✅ [SCRAPING] Found email {email} on {url}")
-            return email
+        try:
+            email = await _scrape_email_from_url(url, domain)
+            pages_crawled.append(url)
+            if email:
+                if url not in emails_by_page:
+                    emails_by_page[url] = []
+                emails_by_page[url].append(email)
+                logger.info(f"✅ [SCRAPING] Found email {email} on {url}")
+        except Exception as e:
+            logger.debug(f"Failed to scrape {url}: {e}")
     
-    logger.warning(f"⚠️  [SCRAPING] No emails found after trying {len(urls_to_try)} URLs for {domain}")
-    return None
+    logger.info(f"📊 [SCRAPING] Crawled {len(pages_crawled)} pages for {domain}, found emails on {len(emails_by_page)} pages")
+    return emails_by_page
 
 
-async def enrich_prospect_email(domain: str, name: Optional[str] = None, page_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def _is_snov_email_from_website(email_data: Dict[str, Any]) -> bool:
     """
-    Enrich a prospect's email using Snov.io.
+    Check if Snov.io email was explicitly found on the website.
+    
+    STRICT MODE: Only accept if source metadata indicates website.
+    """
+    # Check for explicit source indicators
+    source = email_data.get("source", "").lower()
+    sources = email_data.get("sources", [])
+    
+    # Accept if source explicitly says "website" or "web"
+    if "website" in source or "web" in source:
+        return True
+    
+    # Check sources array
+    if isinstance(sources, list):
+        for src in sources:
+            if isinstance(src, dict):
+                src_type = src.get("type", "").lower() or src.get("source", "").lower()
+                if "website" in src_type or "web" in src_type:
+                    return True
+            elif isinstance(src, str):
+                if "website" in src.lower() or "web" in src.lower():
+                    return True
+    
+    # Check for page URL or website URL in metadata
+    if email_data.get("page_url") or email_data.get("website_url") or email_data.get("url"):
+        return True
+    
+    # If no source metadata, REJECT (strict mode)
+    return False
 
-    This service is intentionally low‑level and is used by both discovery and
-    the direct enrichment API.
 
-    Returns a normalized dict on success (see module docstring) or None when
-    no usable email candidate is found.
+async def enrich_prospect_email(domain: str, name: Optional[str] = None, page_url: Optional[str] = None) -> Dict[str, Any]:
+    """
+    STRICT MODE enrichment: Only saves emails found explicitly on websites.
+    
+    Pipeline:
+    1. Scrape homepage, /contact, /about, /team pages
+    2. Extract emails from HTML using regex
+    3. Optionally check Snov.io, but ONLY accept if source = "website"
+    4. Deduplicate and validate format
+    5. Return all found emails OR "no_email_found" status
+    
+    Returns:
+    {
+        "emails": List[str],  # All emails found (may be empty)
+        "primary_email": str | None,  # First email if any found
+        "email_status": "found" | "no_email_found",
+        "pages_crawled": List[str],
+        "emails_by_page": Dict[str, List[str]],
+        "snov_emails_accepted": int,
+        "snov_emails_rejected": int,
+        "domain": str,
+        "success": bool,
+        "source": "html_scraping" | "snov_website" | "no_email_found",
+        "error": str | None,
+    }
     """
     start_time = time.time()
     
@@ -364,432 +269,114 @@ async def enrich_prospect_email(domain: str, name: Optional[str] = None, page_ur
         error_msg = f"Invalid domain format: {domain}"
         logger.error(f"❌ [ENRICHMENT] {error_msg}")
         return {
-            "email": None,
-            "name": None,
-            "company": None,
-            "confidence": 0.0,
+            "emails": [],
+            "primary_email": None,
+            "email_status": "no_email_found",
+            "pages_crawled": [],
+            "emails_by_page": {},
+            "snov_emails_accepted": 0,
+            "snov_emails_rejected": 0,
             "domain": domain,
             "success": False,
-            "source": None,
+            "source": "no_email_found",
             "error": error_msg,
-            "status": "pending_retry",
         }
     
-    logger.info(f"🔍 [ENRICHMENT] Starting enrichment for domain: {normalized_domain}, name: {name or 'N/A'}")
-    logger.info(f"📥 [ENRICHMENT] Input - domain: {domain} → normalized: {normalized_domain}, name: {name}")
+    logger.info(f"🔍 [ENRICHMENT] STRICT MODE: Starting enrichment for {normalized_domain}")
+    logger.info(f"📥 [ENRICHMENT] Input - domain: {domain} → normalized: {normalized_domain}, page_url: {page_url or 'N/A'}")
     
+    all_emails: Set[str] = set()
+    pages_crawled: List[str] = []
+    emails_by_page: Dict[str, List[str]] = {}
+    snov_emails_accepted = 0
+    snov_emails_rejected = 0
+    
+    # STEP 1: Scrape website pages for emails
+    logger.info(f"📄 [ENRICHMENT] Step 1: Scraping website pages for {normalized_domain}...")
     try:
-        # Step 1: Initialize Snov.io client and call domain_search API
-        logger.info(f"📞 [ENRICHMENT] Step 1: Initializing Snov.io client for {normalized_domain}...")
+        emails_by_page = await _scrape_emails_from_domain(normalized_domain, page_url)
+        pages_crawled = list(emails_by_page.keys())
         
-        # Initialize Snov client
-        try:
-            snov_client = SnovIOClient()
-            logger.info(f"✅ [ENRICHMENT] Snov.io client initialized successfully")
-        except ValueError as e:
-            error_msg = f"Snov.io not configured: {e}"
-            logger.error(f"❌ [ENRICHMENT] API authentication failed: {error_msg}", exc_info=True)
-            raise ValueError(error_msg) from e
+        # Collect all unique emails
+        for url, emails in emails_by_page.items():
+            for email in emails:
+                if is_plausible_email(email):
+                    all_emails.add(email)
+                    logger.info(f"✅ [ENRICHMENT] Email found on {url}: {email}")
         
-        # Call Snov.io API - use ONLY domain-search endpoint
-        logger.info(f"📞 [ENRICHMENT] Calling Snov.io domain_search API for {normalized_domain}...")
-        try:
-            snov_result = await snov_client.domain_search(normalized_domain)
-            api_time = (time.time() - start_time) * 1000
-            logger.info(f"⏱️  [ENRICHMENT] Snov.io API call completed in {api_time:.0f}ms - success: {snov_result.get('success')}, emails found: {len(snov_result.get('emails', []))}")
-        except Exception as api_err:
-            api_time = (time.time() - start_time) * 1000
-            error_msg = f"Snov.io API call failed after {api_time:.0f}ms: {str(api_err)}"
-            logger.error(f"❌ [ENRICHMENT] API failure: {error_msg}", exc_info=True)
-            # Distinguish between API failure types
-            if "rate limit" in str(api_err).lower() or "429" in str(api_err):
-                logger.warning(f"⚠️  [ENRICHMENT] Rate limit detected for {normalized_domain}")
-            elif "401" in str(api_err) or "403" in str(api_err):
-                logger.error(f"❌ [ENRICHMENT] Authentication error for {normalized_domain}")
-            raise Exception(error_msg) from api_err
+        logger.info(f"📊 [ENRICHMENT] Step 1 complete: Crawled {len(pages_crawled)} pages, found {len(all_emails)} unique email(s)")
         
-        # Process response - handle rate limits specially
-        if not snov_result.get("success"):
-            error_msg = snov_result.get('error', 'Unknown error')
-            status = snov_result.get('status')
+    except Exception as scrape_err:
+        logger.error(f"❌ [ENRICHMENT] HTML scraping failed for {normalized_domain}: {scrape_err}", exc_info=True)
+    
+    # STEP 2: Optionally check Snov.io, but ONLY accept website-source emails
+    logger.info(f"📞 [ENRICHMENT] Step 2: Checking Snov.io for website-source emails (STRICT MODE)...")
+    try:
+        from app.clients.snov import SnovIOClient
+        snov_client = SnovIOClient()
+        snov_result = await snov_client.domain_search(normalized_domain)
+        
+        if snov_result.get("success") and snov_result.get("emails"):
+            snov_emails = snov_result.get("emails", [])
+            logger.info(f"📧 [ENRICHMENT] Snov.io returned {len(snov_emails)} email(s) for {normalized_domain}")
             
-            # Handle rate limit - return special status, DO NOT return None
-            if status == "rate_limited":
-                logger.warning(f"⚠️  [ENRICHMENT] Snov.io rate limited for {normalized_domain}")
-                # Try local scraping fallback - try multiple contact pages
-                try:
-                    local_email = await _scrape_email_from_domain(normalized_domain, page_url)
-                    if local_email:
-                        logger.info(f"✅ [ENRICHMENT] Local scraping found email for {normalized_domain}: {local_email}")
-                        return {
-                            "email": local_email,
-                            "name": None,
-                            "company": None,
-                            "confidence": 50.0,  # Lower confidence for local scraping
-                            "domain": normalized_domain,
-                            "success": True,
-                            "source": "local_scraping",
-                            "error": None,
-                            "status": None,
-                        }
+            for email_data in snov_emails:
+                if not isinstance(email_data, dict):
+                    continue
+                
+                email_value = email_data.get("value")
+                if not email_value or not is_plausible_email(email_value):
+                    continue
+                
+                # STRICT MODE: Only accept if explicitly from website
+                if _is_snov_email_from_website(email_data):
+                    if email_value not in all_emails:
+                        all_emails.add(email_value)
+                        snov_emails_accepted += 1
+                        logger.info(f"✅ [ENRICHMENT] Accepted Snov.io email (website source): {email_value}")
                     else:
-                        # No email found locally, mark for retry
-                        logger.warning(f"⚠️  [ENRICHMENT] No email found via local scraping for {normalized_domain}, marking for retry")
-                        return {
-                            "email": None,
-                            "name": None,
-                            "company": None,
-                            "confidence": 0.0,
-                            "domain": normalized_domain,
-                            "success": False,
-                            "source": None,
-                            "error": "Rate limited and local scraping found no email",
-                            "status": "pending_retry",
-                        }
-                except Exception as scrape_err:
-                    logger.warning(f"⚠️  [ENRICHMENT] Local scraping failed for {normalized_domain}: {scrape_err}, marking for retry")
-                    return {
-                        "email": None,
-                        "name": None,
-                        "company": None,
-                        "confidence": 0.0,
-                        "domain": normalized_domain,
-                        "success": False,
-                        "source": None,
-                        "error": f"Rate limited and local scraping failed: {scrape_err}",
-                        "status": "pending_retry",
-                    }
+                        logger.debug(f"ℹ️  [ENRICHMENT] Snov.io email already found via scraping: {email_value}")
+                else:
+                    snov_emails_rejected += 1
+                    logger.warning(f"🚫 [ENRICHMENT] Rejected Snov.io email (no website source): {email_value}")
+        else:
+            logger.info(f"ℹ️  [ENRICHMENT] Snov.io returned no emails or failed for {normalized_domain}")
             
-            # For other errors, try local scraping fallback
-            logger.warning(f"⚠️  [ENRICHMENT] Snov.io returned error: {error_msg}, trying local scraping fallback")
-            try:
-                local_email = await _scrape_email_from_domain(normalized_domain, page_url)
-                if local_email:
-                    logger.info(f"✅ [ENRICHMENT] Local scraping found email for {normalized_domain}: {local_email}")
-                    return {
-                        "email": local_email,
-                        "name": None,
-                        "company": None,
-                        "confidence": 50.0,
-                        "domain": normalized_domain,
-                        "success": True,
-                        "source": "local_scraping",
-                        "error": None,
-                        "status": None,
-                    }
-            except Exception as scrape_err:
-                logger.debug(f"Local scraping fallback failed for {normalized_domain}: {scrape_err}")
-            
-            # If local scraping also fails, mark for retry instead of returning None
-            logger.warning(f"⚠️  [ENRICHMENT] All enrichment methods failed for {normalized_domain}, marking for retry")
-            return {
-                "email": None,
-                "name": None,
-                "company": None,
-                "confidence": 0.0,
-                "domain": normalized_domain,
-                "success": False,
-                "source": None,
-                "error": error_msg,
-                "status": "pending_retry",
-            }
-        
-        emails = snov_result.get("emails", [])
-        if not emails or len(emails) == 0:
-            # Check if this was a 404 (domain not in database) - don't log as warning
-            message = snov_result.get("message", "")
-            if "not found in Snov.io database" in message or "Domain not found" in message:
-                logger.info(f"ℹ️  [ENRICHMENT] Domain {normalized_domain} not in Snov.io database, trying local scraping fallback")
-            else:
-                logger.info(f"⚠️  [ENRICHMENT] No emails found for {normalized_domain} via Snov.io, trying fallback methods")
-            
-            # Fallback 1: Try local HTML scraping
-            try:
-                local_email = await _scrape_email_from_domain(normalized_domain, page_url)
-                if local_email:
-                    logger.info(f"✅ [ENRICHMENT] Local scraping found email for {normalized_domain}: {local_email}")
-                    return {
-                        "email": local_email,
-                        "name": None,
-                        "company": None,
-                        "confidence": 50.0,
-                        "domain": normalized_domain,
-                        "success": True,
-                        "source": "local_scraping",
-                        "error": None,
-                        "status": None,
-                    }
-            except Exception as scrape_err:
-                logger.debug(f"Local scraping fallback failed for {normalized_domain}: {scrape_err}")
-            
-            # Fallback 2: Generate email patterns and verify (V1: deterministic pipeline)
-            logger.info(f"🔍 [ENRICHMENT] Step 2: Generating email patterns for {normalized_domain}")
-            try:
-                generated_patterns = _generate_email_patterns(normalized_domain, name)
-                logger.info(f"📧 [ENRICHMENT] Generated {len(generated_patterns)} email patterns for {normalized_domain}")
-                
-                # Step 2a: Try to verify patterns (preferred method)
-                verified_email = None
-                verified_score = 0.0
-                for pattern_email in generated_patterns[:10]:  # Try top 10 patterns
-                    try:
-                        logger.debug(f"🔍 [ENRICHMENT] Verifying pattern: {pattern_email}")
-                        verify_result = await snov_client.email_verifier(pattern_email)
-                        if verify_result.get("success") and verify_result.get("result") == "deliverable":
-                            score = verify_result.get("score", 0)
-                            logger.info(f"✅ [ENRICHMENT] Verified pattern email {pattern_email} (score: {score})")
-                            verified_email = pattern_email
-                            verified_score = float(score)
-                            break  # Use first verified email
-                    except Exception as verify_err:
-                        logger.debug(f"⚠️  [ENRICHMENT] Verification failed for {pattern_email}: {verify_err}")
-                        continue
-                
-                # Step 2b: If verification succeeded, return verified email
-                if verified_email:
-                    email_classification = _classify_email(verified_email)
-                    logger.info(f"✅ [ENRICHMENT] Using verified pattern email: {verified_email} (classification: {email_classification})")
-                    return {
-                        "email": verified_email,
-                        "name": name,
-                        "company": None,
-                        "confidence": verified_score,
-                        "domain": normalized_domain,
-                        "success": True,
-                        "source": "pattern_verified",
-                        "error": None,
-                        "status": None,
-                        "email_classification": email_classification,
-                    }
-                
-                # Step 2c: V1 FALLBACK - Use first plausible pattern without verification
-                # This ensures we ALWAYS have at least one email per website
-                logger.warning(f"⚠️  [ENRICHMENT] No patterns verified, using unverified fallback for {normalized_domain}")
-                for pattern_email in generated_patterns[:5]:  # Try top 5 most common patterns
-                    if is_plausible_email(pattern_email):
-                        email_classification = _classify_email(pattern_email)
-                        logger.info(f"🟡 [ENRICHMENT] Using unverified pattern email: {pattern_email} (classification: {email_classification}) - V1 fallback")
-                        return {
-                            "email": pattern_email,
-                            "name": name,
-                            "company": None,
-                            "confidence": 20.0,  # Low confidence for unverified
-                            "domain": normalized_domain,
-                            "success": True,
-                            "source": "pattern_unverified",
-                            "error": None,
-                            "status": None,
-                            "email_classification": email_classification,
-                        }
-                
-            except Exception as pattern_err:
-                logger.error(f"❌ [ENRICHMENT] Pattern generation failed for {normalized_domain}: {pattern_err}", exc_info=True)
-            
-            # Final fallback: Use info@ as absolute last resort (V1 requirement)
-            final_fallback = f"info@{normalized_domain}"
-            if is_plausible_email(final_fallback):
-                logger.warning(f"🟡 [ENRICHMENT] Using final fallback email: {final_fallback} for {normalized_domain} - V1 requirement")
-                return {
-                    "email": final_fallback,
-                    "name": name,
-                    "company": None,
-                    "confidence": 10.0,  # Very low confidence
-                    "domain": normalized_domain,
-                    "success": True,
-                    "source": "final_fallback",
-                    "error": None,
-                    "status": None,
-                    "email_classification": "generic",
-                }
-            
-            # This should never happen, but log it
-            logger.error(f"❌ [ENRICHMENT] CRITICAL: Could not generate any email for {normalized_domain}")
-            return {
-                "email": None,
-                "name": None,
-                "company": None,
-                "confidence": 0.0,
-                "domain": normalized_domain,
-                "success": False,
-                "source": None,
-                "error": "Failed to generate any email pattern (critical error)",
-                "status": "pending_retry",
-            }
-        
-        # Parse emails correctly - extract ONLY: value, type, confidence_score
-        parsed_emails = []
-        for email_data in emails:
-            if not isinstance(email_data, dict):
-                continue
-            
-            # Extract ONLY the required fields
-            email_value = email_data.get("value")
-            email_type = email_data.get("type")
-            confidence = float(email_data.get("confidence_score", 0) or 0)
-            
-            if not email_value:
-                continue
-            
-            parsed_emails.append({
-                "value": email_value,
-                "type": email_type,
-                "confidence_score": confidence
-            })
-        
-        if not parsed_emails:
-            logger.warning(f"⚠️  [ENRICHMENT] No valid emails parsed from Snov.io response for {normalized_domain}, trying fallback methods")
-            # Try local scraping as fallback before giving up
-            try:
-                local_email = await _scrape_email_from_domain(normalized_domain, page_url)
-                if local_email:
-                    logger.info(f"✅ [ENRICHMENT] Local scraping found email for {normalized_domain}: {local_email}")
-                    return {
-                        "email": local_email,
-                        "name": None,
-                        "company": None,
-                        "confidence": 50.0,
-                        "domain": normalized_domain,
-                        "success": True,
-                        "source": "local_scraping",
-                        "error": None,
-                        "status": None,
-                    }
-            except Exception as scrape_err:
-                logger.debug(f"Local scraping fallback failed for {normalized_domain}: {scrape_err}")
-            
-            # Try pattern generation as last resort
-            try:
-                generated_patterns = _generate_email_patterns(normalized_domain, name)
-                for pattern_email in generated_patterns[:3]:  # Limit to 3
-                    try:
-                        verify_result = await snov_client.email_verifier(pattern_email)
-                        if verify_result.get("success") and verify_result.get("result") == "deliverable":
-                            score = verify_result.get("score", 0)
-                            logger.info(f"✅ [ENRICHMENT] Verified pattern email {pattern_email} (score: {score})")
-                            return {
-                                "email": pattern_email,
-                                "name": name,
-                                "company": None,
-                                "confidence": float(score),
-                                "domain": normalized_domain,
-                                "success": True,
-                                "source": "pattern_generated",
-                                "error": None,
-                                "status": None,
-                            }
-                    except Exception:
-                        continue
-            except Exception:
-                pass
-            
-            # No email found anywhere - return structured response instead of None
-            logger.warning(f"⚠️  [ENRICHMENT] No emails found for {normalized_domain} via any method")
-            return {
-                "email": None,
-                "name": None,
-                "company": None,
-                "confidence": 0.0,
-                "domain": normalized_domain,
-                "success": False,
-                "source": None,
-                "error": "No valid email value in Snov.io response and all fallbacks failed",
-                "status": "pending_retry",
-            }
-        
-        # Get best email (highest confidence) from parsed emails
-        best_email = None
-        best_confidence = 0.0
-        for email_data in parsed_emails:
-            confidence = email_data.get("confidence_score", 0)
-            if confidence > best_confidence:
-                best_confidence = confidence
-                best_email = email_data
-        
-        email_value = best_email["value"]
-        email_type = best_email.get("type")
-        full_name = name  # Use provided name if available
-        company = None  # Not available from parsed email data
-        
-        # Optionally verify the email to increase confidence
-        # Only verify if confidence is below 80 to avoid unnecessary API calls
-        verified = False
-        verification_score = 0
-        if best_confidence < 80:
-            try:
-                verify_result = await snov_client.email_verifier(email_value)
-                if verify_result.get("success") and verify_result.get("result") == "deliverable":
-                    verified = True
-                    verification_score = verify_result.get("score", 0)
-                    logger.info(f"✅ [ENRICHMENT] Email {email_value} verified (score: {verification_score})")
-            except Exception as verify_err:
-                logger.debug(f"Email verification skipped for {email_value}: {verify_err}")
-        
-        total_time = (time.time() - start_time) * 1000
-        
-        email_classification = _classify_email(email_value)
-        result: Dict[str, Any] = {
-            "email": email_value,
-            "name": full_name,
-            "company": company,
-            "confidence": best_confidence,
-            "email_type": email_type,
-            "verified": verified,
-            "verification_score": verification_score,
-            "domain": normalized_domain,
-            "success": True,
-            "source": "snov_io",
-            "error": None,
-            "email_classification": email_classification,
-        }
-        
-        logger.info(f"✅ [ENRICHMENT] Enriched {normalized_domain} in {total_time:.0f}ms")
-        logger.info(
-            "📤 [ENRICHMENT] Output - email=%s, type=%s, name=%s, confidence=%.1f, verified=%s, source=%s",
-            email_value,
-            email_type,
-            full_name,
-            best_confidence,
-            verified,
-            "snov_io",
-        )
-        
-        return result
-        
-    except Exception as e:
-        total_time = (time.time() - start_time) * 1000
-        error_msg = f"Enrichment failed for {domain} after {total_time:.0f}ms: {str(e)}"
-        logger.error(f"❌ [ENRICHMENT] {error_msg}", exc_info=True)
-        
-        # Try local scraping as last resort before giving up
-        try:
-            logger.info(f"🔄 [ENRICHMENT] Attempting local scraping fallback after error for {normalized_domain}")
-            local_email = await _scrape_email_from_domain(normalized_domain, page_url)
-            if local_email:
-                logger.info(f"✅ [ENRICHMENT] Local scraping found email for {normalized_domain} after error: {local_email}")
-                return {
-                    "email": local_email,
-                    "name": None,
-                    "company": None,
-                    "confidence": 50.0,
-                    "domain": normalized_domain,
-                    "success": True,
-                    "source": "local_scraping",
-                    "error": None,
-                    "status": None,
-                }
-        except Exception as scrape_err:
-            logger.debug(f"Local scraping fallback also failed for {normalized_domain}: {scrape_err}")
-        
-        # Return structured error response instead of raising
-        return {
-            "email": None,
-            "name": None,
-            "company": None,
-            "confidence": 0.0,
-            "domain": normalized_domain or domain,
-            "success": False,
-            "source": None,
-            "error": error_msg,
-            "status": "pending_retry",
-        }
-
+    except Exception as snov_err:
+        logger.warning(f"⚠️  [ENRICHMENT] Snov.io check failed for {normalized_domain}: {snov_err}")
+        # Continue - Snov.io is optional
+    
+    # STEP 3: Deduplicate and validate
+    unique_emails = sorted(list(all_emails))  # Sort for consistency
+    primary_email = unique_emails[0] if unique_emails else None
+    
+    # STEP 4: Determine result
+    total_time = (time.time() - start_time) * 1000
+    
+    if unique_emails:
+        email_status = "found"
+        source = "html_scraping" if snov_emails_accepted == 0 else "html_scraping+snov_website"
+        logger.info(f"✅ [ENRICHMENT] SUCCESS: Found {len(unique_emails)} email(s) for {normalized_domain} in {total_time:.0f}ms")
+        logger.info(f"📧 [ENRICHMENT] Emails: {', '.join(unique_emails)}")
+        logger.info(f"📄 [ENRICHMENT] Pages crawled: {len(pages_crawled)}")
+        logger.info(f"✅ [ENRICHMENT] Snov.io: {snov_emails_accepted} accepted, {snov_emails_rejected} rejected")
+    else:
+        email_status = "no_email_found"
+        source = "no_email_found"
+        logger.warning(f"⚠️  [ENRICHMENT] NO EMAIL FOUND for {normalized_domain} after {total_time:.0f}ms")
+        logger.info(f"📄 [ENRICHMENT] Pages crawled: {len(pages_crawled)}")
+        logger.info(f"🚫 [ENRICHMENT] Snov.io: {snov_emails_accepted} accepted, {snov_emails_rejected} rejected")
+    
+    return {
+        "emails": unique_emails,
+        "primary_email": primary_email,
+        "email_status": email_status,
+        "pages_crawled": pages_crawled,
+        "emails_by_page": emails_by_page,
+        "snov_emails_accepted": snov_emails_accepted,
+        "snov_emails_rejected": snov_emails_rejected,
+        "domain": normalized_domain,
+        "success": len(unique_emails) > 0,
+        "source": source,
+        "error": None,
+    }

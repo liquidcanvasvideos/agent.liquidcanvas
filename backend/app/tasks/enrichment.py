@@ -268,19 +268,10 @@ async def process_enrichment_job(job_id: str) -> Dict[str, Any]:
                         prospect.snov_payload = enrich_result
                         no_email_count += 1
                     
-                    # Log what the enrichment service actually returned for debugging
-                    if enrich_result:
-                            logger.debug(f"   Enrichment result: {enrich_result}")
-                        else:
-                            logger.debug(f"   Enrichment service returned None")
-                        # Store snov_result for diagnostics (no hunter_payload - Hunter.io removed)
-                        prospect.snov_payload = snov_result
-                        no_email_count += 1
-                    
                     await db.commit()
                     await db.refresh(prospect)
                     
-                    # Rate limiting (1 request per second to respect Snov.io limits)
+                    # Rate limiting (1 request per second to respect rate limits)
                     await asyncio.sleep(1)
                     
                 except Exception as e:

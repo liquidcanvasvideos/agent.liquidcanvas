@@ -291,11 +291,18 @@ class SnovIOClient:
                         # Determine email type
                         email_type = "personal" if email_data.get("type") == "personal" else "generic"
                         
-                        formatted_emails.append({
+                        # Preserve all metadata from Snov.io response for strict mode checking
+                        formatted_email = {
                             "value": email_value,
                             "type": email_type,
-                            "confidence_score": confidence_score
-                        })
+                            "confidence_score": confidence_score,
+                            # Preserve source metadata for strict mode
+                            "source": email_data.get("source"),
+                            "sources": email_data.get("sources"),
+                            "page_url": email_data.get("page_url") or email_data.get("website_url") or email_data.get("url"),
+                            "raw_email_data": email_data,  # Preserve full raw data
+                        }
+                        formatted_emails.append(formatted_email)
                     
                     return {
                         "success": True,

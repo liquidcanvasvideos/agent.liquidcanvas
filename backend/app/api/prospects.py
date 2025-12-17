@@ -219,6 +219,9 @@ async def create_enrichment_job(
     except Exception as e:
         logger.error(f"Error checking master switch: {e}", exc_info=True)
         # Continue if check fails
+    # TEMP LOG: Enrichment job creation started
+    logger.info(f"📝 [ENRICHMENT API] Creating enrichment job - max_prospects={max_prospects}, only_missing_emails={only_missing_emails}")
+    
     # Create job record
     job = Job(
         job_type="enrich",
@@ -234,12 +237,16 @@ async def create_enrichment_job(
     await db.commit()
     await db.refresh(job)
     
+    logger.info(f"✅ [ENRICHMENT API] Job record created: {job.id}")
+    
     # Start enrichment task in background
     try:
         import asyncio
         # Import inside function to catch syntax errors early
         try:
+            logger.info(f"📦 [ENRICHMENT API] Importing enrichment task module...")
             from app.tasks.enrichment import process_enrichment_job
+            logger.info(f"✅ [ENRICHMENT API] Enrichment task module imported successfully")
         except SyntaxError as syntax_err:
             logger.exception("❌ Syntax error in enrichment task module")
             job.status = "failed"
@@ -261,8 +268,10 @@ async def create_enrichment_job(
                 detail=str(import_err)
             )
         
+        # TEMP LOG: Before starting background task
+        logger.info(f"🚀 [ENRICHMENT API] Starting background task for job {job.id}...")
         asyncio.create_task(process_enrichment_job(str(job.id)))
-        logger.info(f"✅ Enrichment job {job.id} started in background")
+        logger.info(f"✅ [ENRICHMENT API] Background task started - job {job.id} is now running")
     except HTTPException:
         # Re-raise HTTP exceptions (already handled above)
         raise

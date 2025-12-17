@@ -365,7 +365,7 @@ async def process_enrichment_job(job_id: str) -> Dict[str, Any]:
                     job.status = "failed"
                     job.error_message = str(e)
                     await db.commit()
-            except:
-                pass
+            except Exception as commit_err:
+                logger.error(f"❌ Failed to commit error status for job {job_id}: {commit_err}", exc_info=True)
             return {"error": str(e)}
 

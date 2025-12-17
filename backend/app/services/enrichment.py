@@ -337,14 +337,20 @@ async def enrich_prospect_email(domain: str, name: Optional[str] = None, page_ur
     logger.info(f"📥 [ENRICHMENT] Input - domain: {domain} → normalized: {normalized_domain}, name: {name}")
     
     try:
+        # TEMP LOG: Before first Snov API call
+        logger.info(f"📞 [ENRICHMENT] About to initialize Snov.io client for {normalized_domain}...")
+        
         # Initialize Snov client
         try:
             snov_client = SnovIOClient()
             logger.info(f"✅ [ENRICHMENT] Snov.io client initialized")
         except ValueError as e:
             error_msg = f"Snov.io not configured: {e}"
-            logger.error(f"❌ [ENRICHMENT] {error_msg}")
+            logger.error(f"❌ [ENRICHMENT] {error_msg}", exc_info=True)
             raise ValueError(error_msg) from e
+        
+        # TEMP LOG: Before first Snov API call
+        logger.info(f"📞 [ENRICHMENT] About to call Snov.io domain_search API for {normalized_domain}...")
         
         # Call Snov.io API - use ONLY domain-search endpoint
         try:

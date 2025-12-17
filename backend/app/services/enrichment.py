@@ -306,7 +306,7 @@ async def _scrape_email_from_domain(domain: str, page_url: Optional[str] = None)
 
 async def enrich_prospect_email(domain: str, name: Optional[str] = None, page_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Enrich a prospect's email using Hunter.io.
+    Enrich a prospect's email using Snov.io.
 
     This service is intentionally low‑level and is used by both discovery and
     the direct enrichment API.
@@ -353,7 +353,7 @@ async def enrich_prospect_email(domain: str, name: Optional[str] = None, page_ur
             logger.info(f"⏱️  [ENRICHMENT] Snov.io domain-search API call completed in {api_time:.0f}ms")
         except Exception as api_err:
             api_time = (time.time() - start_time) * 1000
-            error_msg = f"Hunter.io API call failed after {api_time:.0f}ms: {str(api_err)}"
+            error_msg = f"Snov.io API call failed after {api_time:.0f}ms: {str(api_err)}"
             logger.error(f"❌ [ENRICHMENT] {error_msg}", exc_info=True)
             raise Exception(error_msg) from api_err
         

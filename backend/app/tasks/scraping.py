@@ -14,6 +14,7 @@ from app.db.database import AsyncSessionLocal
 from app.models.prospect import Prospect
 from app.models.job import Job
 from app.services.enrichment import _scrape_emails_from_domain
+from app.models.enums import ScrapeStatus
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ async def scrape_prospects_async(job_id: str):
                 select(Prospect).where(
                     Prospect.id.in_([UUID(pid) for pid in prospect_ids]),
                     Prospect.approval_status == "approved",
-                    Prospect.scrape_status == "DISCOVERED"
+                    Prospect.scrape_status == ScrapeStatus.DISCOVERED.value
                 )
             )
             prospects = result.scalars().all()
@@ -85,12 +86,12 @@ async def scrape_prospects_async(job_id: str):
                         prospect.contact_email = all_emails[0]  # Primary email
                         prospect.scrape_source_url = source_url
                         prospect.scrape_payload = emails_by_page
-                        prospect.scrape_status = "SCRAPED"
+                        prospect.scrape_status = ScrapeStatus.SCRAPED.value
                         scraped_count += 1
                         logger.info(f"✅ [SCRAPING] Found {len(all_emails)} email(s) for {prospect.domain}: {all_emails[0]}")
                     else:
                         # No emails found
-                        prospect.scrape_status = "NO_EMAIL_FOUND"
+                        prospect.scrape_status = ScrapeStatus.NO_EMAIL_FOUND.value
                         prospect.scrape_payload = {}
                         no_email_count += 1
                         logger.warning(f"⚠️  [SCRAPING] No emails found for {prospect.domain}")
@@ -103,7 +104,7 @@ async def scrape_prospects_async(job_id: str):
                     
                 except Exception as e:
                     logger.error(f"❌ [SCRAPING] Failed to scrape {prospect.domain}: {e}", exc_info=True)
-                    prospect.scrape_status = "failed"
+                    prospect.scrape_status = ScrapeStatus.FAILED.value
                     failed_count += 1
                     await db.commit()
                     continue

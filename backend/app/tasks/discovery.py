@@ -33,6 +33,7 @@ if 'logger' not in locals():
 # Import database session from backend
 from app.db.database import AsyncSessionLocal
 from app.db.transaction_helpers import safe_commit, safe_flush
+from app.models.enums import DiscoveryStatus, ScrapeStatus, VerificationStatus, DraftStatus, SendStatus
 
 
 def _generate_search_queries(keywords: str, categories: List[str], locations: List[str]) -> List[str]:
@@ -560,15 +561,15 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
                                 },
                                 # PIPELINE MODE: Set discovery status, store metadata, NO enrichment
                                 # Canonical status: DISCOVERED (pipeline mode) or NEW (legacy mode)
-                                discovery_status="DISCOVERED" if pipeline_mode else "NEW",
+                                discovery_status=DiscoveryStatus.DISCOVERED.value if pipeline_mode else DiscoveryStatus.NEW.value,
                                 discovery_category=query_category if pipeline_mode else None,
                                 discovery_location=loc if pipeline_mode else None,
                                 discovery_keywords=keywords if pipeline_mode else None,
                                 approval_status="pending" if pipeline_mode else None,
-                                scrape_status="DISCOVERED" if pipeline_mode else "DISCOVERED",  # Always DISCOVERED on discovery
-                                verification_status="pending" if pipeline_mode else None,
-                                draft_status="pending" if pipeline_mode else None,
-                                send_status="pending" if pipeline_mode else None,
+                                scrape_status=ScrapeStatus.DISCOVERED.value if pipeline_mode else ScrapeStatus.DISCOVERED.value,  # Always DISCOVERED on discovery
+                                verification_status=VerificationStatus.PENDING.value if pipeline_mode else None,
+                                draft_status=DraftStatus.PENDING.value if pipeline_mode else None,
+                                send_status=SendStatus.PENDING.value if pipeline_mode else None,
                             )
                             
                             db.add(prospect)

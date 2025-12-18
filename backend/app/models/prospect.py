@@ -8,6 +8,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import uuid
 from app.db.database import Base
+from app.models.enums import DiscoveryStatus, ScrapeStatus, VerificationStatus, DraftStatus, SendStatus
 
 
 class Prospect(Base):
@@ -27,17 +28,17 @@ class Prospect(Base):
     # These four columns are CRITICAL and MUST exist in database
     # Missing any causes /api/pipeline/status to return 500 errors
     # discovery_status: Required to enforce strict step-by-step pipeline progression
-    discovery_status = Column(String, nullable=False, server_default='NEW', index=True)
+    discovery_status = Column(String, nullable=False, server_default=DiscoveryStatus.NEW.value, index=True)
     # scrape_status: Tracks scraping step - required for pipeline status queries
     # Lifecycle: DISCOVERED → SCRAPED → ENRICHED → EMAILED (send_status tracks email)
-    scrape_status = Column(String, nullable=False, server_default='DISCOVERED', index=True)  # DISCOVERED, SCRAPED, ENRICHED, NO_EMAIL_FOUND, failed
+    scrape_status = Column(String, nullable=False, server_default=ScrapeStatus.DISCOVERED.value, index=True)  # DISCOVERED, SCRAPED, ENRICHED, NO_EMAIL_FOUND, failed
     # approval_status: Tracks human selection step - required for pipeline progression
     approval_status = Column(String, nullable=False, server_default='PENDING', index=True)  # PENDING, approved, rejected, deleted
     # verification_status: Tracks email verification step - required for pipeline status queries
-    verification_status = Column(String, nullable=False, server_default='UNVERIFIED', index=True)  # PENDING, verified, unverified, UNVERIFIED, failed
+    verification_status = Column(String, nullable=False, server_default=VerificationStatus.UNVERIFIED.value, index=True)  # PENDING, verified, unverified, UNVERIFIED, failed
     # Draft and send status - required for pipeline progression
-    draft_status = Column(String, nullable=False, server_default='pending', index=True)  # pending, drafted, failed
-    send_status = Column(String, nullable=False, server_default='pending', index=True)  # pending, sent, failed
+    draft_status = Column(String, nullable=False, server_default=DraftStatus.PENDING.value, index=True)  # pending, drafted, failed
+    send_status = Column(String, nullable=False, server_default=SendStatus.PENDING.value, index=True)  # pending, sent, failed
     
     # Legacy outreach_status (kept for backward compatibility)
     outreach_status = Column(String, default="pending", index=True)  # pending/sent/replied/accepted/rejected
@@ -81,16 +82,16 @@ class Prospect(Base):
     
     def can_proceed_to_scraping(self) -> bool:
         """Check if prospect can proceed to scraping step"""
-        return self.discovery_status == "DISCOVERED" and self.approval_status == "approved"
+        return self.discovery_status == DiscoveryStatus.DISCOVERED.value and self.approval_status == "approved"
     
     def can_proceed_to_verification(self) -> bool:
         """Check if prospect can proceed to verification step"""
-        return self.scrape_status in ["SCRAPED", "NO_EMAIL_FOUND"]
+        return self.scrape_status in [ScrapeStatus.SCRAPED.value, ScrapeStatus.NO_EMAIL_FOUND.value]
     
     def can_proceed_to_drafting(self) -> bool:
         """Check if prospect can proceed to drafting step"""
-        return self.verification_status in ["verified", "unverified"]
+        return self.verification_status in [VerificationStatus.VERIFIED.value, VerificationStatus.UNVERIFIED_LOWER.value]
     
     def can_proceed_to_sending(self) -> bool:
         """Check if prospect can proceed to sending step"""
-        return self.draft_status == "drafted"
+        return self.draft_status == DraftStatus.DRAFTED.value

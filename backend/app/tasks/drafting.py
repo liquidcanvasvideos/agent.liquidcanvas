@@ -14,6 +14,7 @@ from app.db.database import AsyncSessionLocal
 from app.models.prospect import Prospect
 from app.models.job import Job
 from app.clients.gemini import GeminiClient
+from app.models.enums import VerificationStatus, DraftStatus
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +53,9 @@ async def draft_prospects_async(job_id: str):
             result = await db.execute(
                 select(Prospect).where(
                     Prospect.id.in_([UUID(pid) for pid in prospect_ids]),
-                    Prospect.verification_status.in_(["verified", "unverified"]),
+                    Prospect.verification_status.in_([VerificationStatus.VERIFIED.value, VerificationStatus.UNVERIFIED_LOWER.value]),
                     Prospect.contact_email.isnot(None),
-                    Prospect.draft_status == "pending"
+                    Prospect.draft_status == DraftStatus.PENDING.value
                 )
             )
             prospects = result.scalars().all()
@@ -101,13 +102,13 @@ async def draft_prospects_async(job_id: str):
                     if gemini_result.get("success"):
                         prospect.draft_subject = gemini_result.get("subject")
                         prospect.draft_body = gemini_result.get("body")
-                        prospect.draft_status = "drafted"
+                        prospect.draft_status = DraftStatus.DRAFTED.value
                         drafted_count += 1
                         logger.info(f"✅ [DRAFTING] Drafted email for {prospect.domain}: {prospect.draft_subject}")
                     else:
                         error = gemini_result.get("error", "Unknown error")
                         logger.error(f"❌ [DRAFTING] Gemini failed for {prospect.domain}: {error}")
-                        prospect.draft_status = "failed"
+                        prospect.draft_status = DraftStatus.FAILED.value
                         failed_count += 1
                     
                     await db.commit()
@@ -118,7 +119,7 @@ async def draft_prospects_async(job_id: str):
                     
                 except Exception as e:
                     logger.error(f"❌ [DRAFTING] Failed to draft {prospect.domain}: {e}", exc_info=True)
-                    prospect.draft_status = "failed"
+                    prospect.draft_status = DraftStatus.FAILED.value
                     failed_count += 1
                     await db.commit()
                     continue

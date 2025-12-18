@@ -87,12 +87,25 @@ export default function Pipeline() {
       loadStatusDebounced()
     }, 10000)
     
+    // Listen for manual refresh requests (e.g., after composing email from Leads page)
+    const handleRefreshPipelineStatus = () => {
+      console.log('🔄 Pipeline status refresh requested...')
+      loadStatusDebounced()
+    }
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('refreshPipelineStatus', handleRefreshPipelineStatus)
+    }
+    
     return () => {
       abortController.abort()
       if (debounceTimeout) {
         clearTimeout(debounceTimeout)
       }
       clearInterval(interval)
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('refreshPipelineStatus', handleRefreshPipelineStatus)
+      }
     }
   }, [])
 

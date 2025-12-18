@@ -1005,6 +1005,9 @@ async def compose_email(
     # Save draft to prospect
     prospect.draft_subject = gemini_result.get("subject")
     prospect.draft_body = gemini_result.get("body")
+    # Update draft_status to "drafted" so pipeline Drafting card reflects this
+    from app.models.prospect import DraftStatus
+    prospect.draft_status = DraftStatus.DRAFTED.value
     
     await db.commit()
     await db.refresh(prospect)

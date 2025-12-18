@@ -117,6 +117,11 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
       setActiveProspect({ ...prospect, draft_subject: draftSub, draft_body: draftBdy })
       setDraftSubject(draftSub)
       setDraftBody(draftBdy)
+      
+      // Trigger pipeline status refresh so Drafting card updates
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('refreshPipelineStatus'))
+      }
     } catch (error: any) {
       console.error('Failed to compose email:', error)
       alert(error.message || 'Failed to compose email')

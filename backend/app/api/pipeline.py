@@ -954,6 +954,15 @@ async def get_pipeline_status(
             logger.error(f"❌ Fallback drafting_ready also failed: {fallback_err}", exc_info=True)
             drafting_ready = 0
     
+    # Step 6: DRAFTED (draft_status = "drafted")
+    # Data-driven: Count prospects with drafted emails from prospects table ONLY
+    drafted = await db.execute(
+        select(func.count(Prospect.id)).where(
+            Prospect.draft_status == DraftStatus.DRAFTED.value
+        )
+    )
+    drafted_count = drafted.scalar() or 0
+    
     # Return pipeline status counts
     # Stage lifecycle: DISCOVERED → SCRAPED/EMAIL_FOUND → LEAD → VERIFIED → DRAFTED → SENT
     # All queries are defensive and return 0 if no rows exist
@@ -975,6 +984,7 @@ async def get_pipeline_status(
         "reviewed": emails_verified_count,  # Same as emails_verified_count for review step
         "drafting_ready": drafting_ready,  # Data-driven: stage=LEAD, email IS NOT NULL, verification_status=verified
         "drafting_ready_count": drafting_ready,  # Backwards-compatible alias
+        "drafted": drafted_count,  # Data-driven: draft_status=drafted (prospects with email drafts)
     }
 
 

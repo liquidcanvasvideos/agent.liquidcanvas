@@ -271,14 +271,16 @@ async def startup():
                     logger.info("✅ serp_intent columns already exist")
                 
                 # BULLETPROOF FIX: Ensure ALL pipeline status columns exist
-                # Required columns for /api/pipeline/status to work without 500 errors
+                # Required columns for /api/pipeline/status and pipeline endpoints to work without 500 errors
                 # Format: (column_name, sql_type, default_value, should_be_not_null)
-                # These four columns are CRITICAL - missing any causes 500 errors
+                # These columns are CRITICAL - missing any causes UndefinedColumnError
                 required_pipeline_columns = [
                     ("discovery_status", "VARCHAR", "NEW", True),
                     ("scrape_status", "VARCHAR", "DISCOVERED", True),
                     ("approval_status", "VARCHAR", "PENDING", True),
                     ("verification_status", "VARCHAR", "UNVERIFIED", True),
+                    ("draft_status", "VARCHAR", "pending", True),  # pending, drafted, failed
+                    ("send_status", "VARCHAR", "pending", True),  # pending, sent, failed
                 ]
                 
                 for column_name, sql_type, default_value, should_be_not_null in required_pipeline_columns:

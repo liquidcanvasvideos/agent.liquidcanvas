@@ -35,8 +35,9 @@ class Prospect(Base):
     approval_status = Column(String, nullable=False, server_default='PENDING', index=True)  # PENDING, approved, rejected, deleted
     # verification_status: Tracks email verification step - required for pipeline status queries
     verification_status = Column(String, nullable=False, server_default='UNVERIFIED', index=True)  # PENDING, verified, unverified, UNVERIFIED, failed
-    draft_status = Column(String, default="pending", index=True)  # pending, drafted, failed
-    send_status = Column(String, default="pending", index=True)  # pending, sent, failed
+    # Draft and send status - required for pipeline progression
+    draft_status = Column(String, nullable=False, server_default='pending', index=True)  # pending, drafted, failed
+    send_status = Column(String, nullable=False, server_default='pending', index=True)  # pending, sent, failed
     
     # Legacy outreach_status (kept for backward compatibility)
     outreach_status = Column(String, default="pending", index=True)  # pending/sent/replied/accepted/rejected

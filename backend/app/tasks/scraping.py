@@ -7,7 +7,7 @@ import logging
 from typing import List
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from datetime import datetime, timezone
 
 from app.db.database import AsyncSessionLocal
@@ -98,12 +98,27 @@ async def scrape_prospects_async(job_id: str):
                         prospect.scrape_source_url = source_url
                         prospect.scrape_payload = emails_by_page
                         prospect.scrape_status = ScrapeStatus.SCRAPED.value
-                        # Promote to LEAD stage - ready for verification (defensive: only if stage column exists)
+                        # Promote to LEAD stage - ready for verification (defensive: check if column exists)
                         try:
-                            prospect.stage = ProspectStage.LEAD.value
-                        except AttributeError:
-                            # Stage column doesn't exist yet - skip stage update
-                            logger.debug(f"⚠️  stage column not available, skipping stage update for {prospect.id}")
+                            # Check if stage column exists in database
+                            column_check = await db.execute(
+                                text("""
+                                    SELECT column_name
+                                    FROM information_schema.columns 
+                                    WHERE table_name = 'prospects' 
+                                    AND column_name = 'stage'
+                                """)
+                            )
+                            if column_check.fetchone():
+                                # Column exists - safe to set stage
+                                prospect.stage = ProspectStage.LEAD.value
+                                logger.debug(f"✅ [SCRAPING] Set stage=LEAD for prospect {prospect.id}")
+                            else:
+                                # Column doesn't exist yet - will be set by migration
+                                logger.debug(f"⚠️  stage column not available yet, skipping stage update for {prospect.id}")
+                        except Exception as stage_err:
+                            # If check fails, log but continue (stage will be backfilled by migration)
+                            logger.warning(f"⚠️  Could not check/set stage column: {stage_err}, will be backfilled by migration")
                         scraped_count += 1
                         logger.info(f"✅ [SCRAPING] Found {len(all_emails)} email(s) for {prospect.domain}: {all_emails[0]}")
                         logger.info(f"📝 [SCRAPING] Updated prospect {prospect.id} - scrape_status=SCRAPED, contact_email={all_emails[0]}")
@@ -113,10 +128,25 @@ async def scrape_prospects_async(job_id: str):
                         prospect.scrape_payload = {}
                         # Set stage to SCRAPED (not LEAD, since no email found)
                         try:
-                            prospect.stage = ProspectStage.SCRAPED.value
-                        except AttributeError:
-                            # Stage column doesn't exist yet - skip stage update
-                            logger.debug(f"⚠️  stage column not available, skipping stage update for {prospect.id}")
+                            # Check if stage column exists in database
+                            column_check = await db.execute(
+                                text("""
+                                    SELECT column_name
+                                    FROM information_schema.columns 
+                                    WHERE table_name = 'prospects' 
+                                    AND column_name = 'stage'
+                                """)
+                            )
+                            if column_check.fetchone():
+                                # Column exists - safe to set stage
+                                prospect.stage = ProspectStage.SCRAPED.value
+                                logger.debug(f"✅ [SCRAPING] Set stage=SCRAPED for prospect {prospect.id}")
+                            else:
+                                # Column doesn't exist yet - will be set by migration
+                                logger.debug(f"⚠️  stage column not available yet, skipping stage update for {prospect.id}")
+                        except Exception as stage_err:
+                            # If check fails, log but continue (stage will be backfilled by migration)
+                            logger.warning(f"⚠️  Could not check/set stage column: {stage_err}, will be backfilled by migration")
                         no_email_count += 1
                         logger.warning(f"⚠️  [SCRAPING] No emails found for {prospect.domain}")
                         logger.info(f"📝 [SCRAPING] Updated prospect {prospect.id} - scrape_status=NO_EMAIL_FOUND, stage=SCRAPED")
@@ -136,6 +166,21 @@ async def scrape_prospects_async(job_id: str):
                     )
                     # Update prospect state to FAILED
                     prospect.scrape_status = ScrapeStatus.FAILED.value
+                    # Set stage to FAILED if column exists
+                    try:
+                        column_check = await db.execute(
+                            text("""
+                                SELECT column_name
+                                FROM information_schema.columns 
+                                WHERE table_name = 'prospects' 
+                                AND column_name = 'stage'
+                            """)
+                        )
+                        if column_check.fetchone():
+                            prospect.stage = "FAILED"  # ProspectStage doesn't have FAILED, use string directly
+                            logger.debug(f"✅ [SCRAPING] Set stage=FAILED for prospect {prospect.id}")
+                    except Exception as stage_err:
+                        logger.warning(f"⚠️  Could not set stage=FAILED: {stage_err}")
                     failed_count += 1
                     logger.info(f"📝 [SCRAPING] Updated prospect {prospect.id} - scrape_status=FAILED")
                     # CRITICAL: Commit failed state update

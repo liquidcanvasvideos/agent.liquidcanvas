@@ -1120,6 +1120,7 @@ export interface PipelineStatus {
   sent?: number  // Optional - may not be in response
   discovered_for_scraping?: number  // Legacy field - aliased to scrape_ready_count
   scrape_ready_count?: number       // New canonical field for scraping unlock
+  drafting_ready_count?: number     // Data-driven: stage=LEAD, email IS NOT NULL, verification_status=verified
 }
 
 // Normalized pipeline status - ALL fields are guaranteed to be numbers
@@ -1136,6 +1137,7 @@ export interface NormalizedPipelineStatus {
   sent: number
   discovered_for_scraping: number
   scrape_ready_count: number
+  drafting_ready_count: number  // Data-driven: stage=LEAD, email IS NOT NULL, verification_status=verified
 }
 
 /**
@@ -1166,6 +1168,7 @@ export function normalizePipelineStatus(rawStatus: Partial<PipelineStatus> | nul
     sent: typeof rawStatus?.sent === 'number' ? rawStatus.sent : 0,
     discovered_for_scraping: discoveredForScraping,
     scrape_ready_count: discoveredForScraping,
+    drafting_ready_count: typeof rawStatus?.drafting_ready_count === 'number' ? rawStatus.drafting_ready_count : 0,  // Data-driven: stage=LEAD, email IS NOT NULL, verification_status=verified
   }
 }
 

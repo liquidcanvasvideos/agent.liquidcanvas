@@ -252,14 +252,14 @@ export default function Pipeline() {
       name: 'Drafting',
       description: 'Generate outreach emails with Gemini',
       icon: FileText,
-      status: normalizedStatus.verified === 0 ? 'locked' :
+      status: normalizedStatus.drafting_ready_count === 0 ? 'locked' :
               normalizedStatus.drafted > 0 ? 'completed' : 'active',
       count: normalizedStatus.drafted,
-      ctaText: normalizedStatus.verified === 0 ? 'Verify Emails First' :
+      ctaText: normalizedStatus.drafting_ready_count === 0 ? 'Verify Leads First' :
                normalizedStatus.drafted > 0 ? 'View Drafts' : 'Start Drafting',
       ctaAction: () => {
-        if (normalizedStatus.verified === 0) {
-          alert('Please verify emails first')
+        if (normalizedStatus.drafting_ready_count === 0) {
+          alert('Please verify leads first. Leads must be promoted, have emails, and be verified.')
           return
         }
         handleDraft()
@@ -351,7 +351,7 @@ export default function Pipeline() {
                     {step.id === 1 && `${normalizedStatus.discovered} discovered`}
                     {step.id === 2 && `${normalizedStatus.scraped} scraped • ${normalizedStatus.email_found || 0} with emails`}
                     {step.id === 3 && `${normalizedStatus.leads} leads • ${normalizedStatus.verified_stage || normalizedStatus.verified} verified`}
-                    {step.id === 4 && `${normalizedStatus.drafted} drafted`}
+                    {step.id === 4 && `${normalizedStatus.drafting_ready_count || 0} ready • ${normalizedStatus.drafted} drafted`}
                     {step.id === 5 && `${normalizedStatus.sent} sent`}
                     {!step.id && `${step.count} ${step.count === 1 ? 'item' : 'items'} ${isCompleted ? 'completed' : 'ready'}`}
                   </p>

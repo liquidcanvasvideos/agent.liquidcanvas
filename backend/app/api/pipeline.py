@@ -563,21 +563,61 @@ async def draft_emails(
     - Gemini receives: website info, category, location, email type, outreach intent
     - Sets draft_status = "drafted"
     """
-    # Get verified prospects ready for drafting
-    result = await db.execute(
-        select(Prospect).where(
-            Prospect.id.in_(request.prospect_ids),
-            Prospect.verification_status.in_(["verified", "unverified"]),
-            Prospect.contact_email.isnot(None),
-            Prospect.draft_status == "pending"
+    # Get verified LEAD prospects ready for drafting
+    # Requirements: stage = LEAD, email IS NOT NULL, verification_status = verified
+    # Defensive: Check if stage column exists
+    from sqlalchemy import text
+    prospects = []
+    try:
+        column_check = await db.execute(
+            text("""
+                SELECT column_name
+                FROM information_schema.columns 
+                WHERE table_name = 'prospects' 
+                AND column_name = 'stage'
+            """)
         )
-    )
-    prospects = result.scalars().all()
+        if column_check.fetchone():
+            # Column exists - use stage-based query
+            result = await db.execute(
+                select(Prospect).where(
+                    Prospect.id.in_(request.prospect_ids),
+                    Prospect.stage == ProspectStage.LEAD.value,
+                    Prospect.verification_status == VerificationStatus.VERIFIED.value,
+                    Prospect.contact_email.isnot(None),
+                    Prospect.draft_status == "pending"
+                )
+            )
+            prospects = result.scalars().all()
+        else:
+            # Column doesn't exist yet - fallback to verification_status + email
+            logger.warning("⚠️  stage column not found, using fallback logic for drafting")
+            result = await db.execute(
+                select(Prospect).where(
+                    Prospect.id.in_(request.prospect_ids),
+                    Prospect.verification_status == VerificationStatus.VERIFIED.value,
+                    Prospect.contact_email.isnot(None),
+                    Prospect.draft_status == "pending"
+                )
+            )
+            prospects = result.scalars().all()
+    except Exception as e:
+        logger.error(f"❌ Error checking stage column or querying prospects for drafting: {e}", exc_info=True)
+        # Fallback to verification_status + email if stage check/query fails
+        result = await db.execute(
+            select(Prospect).where(
+                Prospect.id.in_(request.prospect_ids),
+                Prospect.verification_status == VerificationStatus.VERIFIED.value,
+                Prospect.contact_email.isnot(None),
+                Prospect.draft_status == "pending"
+            )
+        )
+        prospects = result.scalars().all()
     
     if len(prospects) != len(request.prospect_ids):
         raise HTTPException(
             status_code=400,
-            detail="Some prospects not found or not ready for drafting. Ensure they are verified and have emails."
+            detail="Some prospects not found or not ready for drafting. Ensure they are LEAD stage, verified, and have emails."
         )
     
     logger.info(f"✍️  [PIPELINE STEP 6] Drafting emails for {len(prospects)} verified prospects")
@@ -844,6 +884,60 @@ async def get_pipeline_status(
     )
     verified_count = verified.scalar() or 0
     
+    # Step 5: DRAFTING READY (stage = LEAD, email IS NOT NULL, verification_status = verified)
+    # Data-driven: Count prospects ready for drafting based on actual data, not job completion
+    drafting_ready_count = 0
+    try:
+        # Check if stage column exists
+        column_check = await db.execute(
+            text("""
+                SELECT column_name
+                FROM information_schema.columns 
+                WHERE table_name = 'prospects' 
+                AND column_name = 'stage'
+            """)
+        )
+        if column_check.fetchone():
+            # Column exists - use raw SQL to query safely
+            drafting_ready_result = await db.execute(
+                text("""
+                    SELECT COUNT(*) 
+                    FROM prospects 
+                    WHERE stage = :stage_value
+                    AND contact_email IS NOT NULL
+                    AND verification_status = :verification_status_value
+                """),
+                {
+                    "stage_value": ProspectStage.LEAD.value,
+                    "verification_status_value": VerificationStatus.VERIFIED.value
+                }
+            )
+            drafting_ready_count = drafting_ready_result.scalar() or 0
+        else:
+            # Column doesn't exist yet - fallback to verification_status + email
+            logger.warning("⚠️  stage column not found, using fallback logic for drafting_ready_count")
+            drafting_ready_fallback = await db.execute(
+                select(func.count(Prospect.id)).where(
+                    Prospect.verification_status == VerificationStatus.VERIFIED.value,
+                    Prospect.contact_email.isnot(None)
+                )
+            )
+            drafting_ready_count = drafting_ready_fallback.scalar() or 0
+    except Exception as e:
+        logger.error(f"❌ Error counting drafting-ready prospects: {e}", exc_info=True)
+        # Fallback to verification_status + email if stage query fails
+        try:
+            drafting_ready_fallback = await db.execute(
+                select(func.count(Prospect.id)).where(
+                    Prospect.verification_status == VerificationStatus.VERIFIED.value,
+                    Prospect.contact_email.isnot(None)
+                )
+            )
+            drafting_ready_count = drafting_ready_fallback.scalar() or 0
+        except Exception as fallback_err:
+            logger.error(f"❌ Fallback drafting_ready_count also failed: {fallback_err}", exc_info=True)
+            drafting_ready_count = 0
+    
     # Return pipeline status counts
     # Stage lifecycle: DISCOVERED → SCRAPED/EMAIL_FOUND → LEAD → VERIFIED → DRAFTED → SENT
     # All queries are defensive and return 0 if no rows exist
@@ -860,6 +954,7 @@ async def get_pipeline_status(
         "verified": verified_count,  # verification_status = VERIFIED
         "verified_stage": verified_stage_count,  # stage = VERIFIED
         "reviewed": verified_count,  # Same as verified for review step
+        "drafting_ready_count": drafting_ready_count,  # Data-driven: stage=LEAD, email IS NOT NULL, verification_status=verified
     }
 
 

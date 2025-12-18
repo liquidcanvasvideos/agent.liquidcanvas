@@ -581,9 +581,9 @@ async def draft_emails(
             # Column exists - use stage-based query
             # Check for VERIFIED stage (after verification, stage becomes VERIFIED, not LEAD)
             # OR LEAD stage with verified status (in case verification didn't update stage yet)
-    result = await db.execute(
-        select(Prospect).where(
-            Prospect.id.in_(request.prospect_ids),
+            result = await db.execute(
+                select(Prospect).where(
+                    Prospect.id.in_(request.prospect_ids),
                     Prospect.stage.in_([ProspectStage.VERIFIED.value, ProspectStage.LEAD.value]),
                     Prospect.verification_status == VerificationStatus.VERIFIED.value,
                     Prospect.contact_email.isnot(None),
@@ -610,11 +610,11 @@ async def draft_emails(
             select(Prospect).where(
                 Prospect.id.in_(request.prospect_ids),
                 Prospect.verification_status == VerificationStatus.VERIFIED.value,
-            Prospect.contact_email.isnot(None),
-            Prospect.draft_status == "pending"
+                Prospect.contact_email.isnot(None),
+                Prospect.draft_status == "pending"
+            )
         )
-    )
-    prospects = result.scalars().all()
+        prospects = result.scalars().all()
     
     if len(prospects) != len(request.prospect_ids):
         raise HTTPException(

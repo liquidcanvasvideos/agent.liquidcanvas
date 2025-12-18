@@ -270,6 +270,32 @@ async def startup():
                 else:
                     logger.info("✅ serp_intent columns already exist")
                 
+                # Ensure discovery metadata columns exist (required for /api/pipeline/websites)
+                discovery_metadata_columns = [
+                    ("discovery_category", "VARCHAR"),
+                    ("discovery_location", "VARCHAR"),
+                    ("discovery_keywords", "TEXT"),
+                ]
+                
+                for column_name, sql_type in discovery_metadata_columns:
+                    column_check = await conn.execute(
+                        text("""
+                            SELECT column_name
+                            FROM information_schema.columns 
+                            WHERE table_name = 'prospects' 
+                            AND column_name = :column_name
+                        """),
+                        {"column_name": column_name}
+                    )
+                    if not column_check.fetchone():
+                        logger.warning(f"⚠️  Missing {column_name} column - adding it now...")
+                        await conn.execute(
+                            text(f"ALTER TABLE prospects ADD COLUMN {column_name} {sql_type}")
+                        )
+                        logger.info(f"✅ Added {column_name} column")
+                    else:
+                        logger.info(f"✅ {column_name} column already exists")
+                
                 # BULLETPROOF FIX: Ensure ALL pipeline status columns exist
                 # Required columns for /api/pipeline/status and pipeline endpoints to work without 500 errors
                 # Format: (column_name, sql_type, default_value, should_be_not_null)

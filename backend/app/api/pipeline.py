@@ -689,7 +689,7 @@ async def get_websites(
             "title": p.page_title or p.domain,
             "category": p.discovery_category or "Unknown",
             "location": p.discovery_location or "Unknown",
-            "discovery_job_id": str(p.discovery_job_id) if p.discovery_job_id else None,
+            "discovery_job_id": str(p.discovery_query_id) if p.discovery_query_id else None,
             "discovered_at": p.created_at.isoformat() if p.created_at else None,
             "scrape_status": p.scrape_status or "DISCOVERED",
             "approval_status": p.approval_status or "PENDING",

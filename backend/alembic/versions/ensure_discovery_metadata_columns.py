@@ -55,6 +55,54 @@ def upgrade() -> None:
     if not result.fetchone():
         op.add_column('prospects', sa.Column('discovery_keywords', sa.Text(), nullable=True))
     
+    # Check and add scraping metadata columns
+    scraping_metadata = [
+        ('scrape_payload', sa.dialects.postgresql.JSONB),
+        ('scrape_source_url', sa.Text),
+    ]
+    
+    for column_name, column_type in scraping_metadata:
+        result = conn.execute(text(f"""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'prospects' 
+            AND column_name = '{column_name}'
+        """))
+        if not result.fetchone():
+            op.add_column('prospects', sa.Column(column_name, column_type, nullable=True))
+    
+    # Check and add verification metadata columns
+    verification_metadata = [
+        ('verification_confidence', sa.Numeric(precision=5, scale=2)),
+        ('verification_payload', sa.dialects.postgresql.JSONB),
+    ]
+    
+    for column_name, column_type in verification_metadata:
+        result = conn.execute(text(f"""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'prospects' 
+            AND column_name = '{column_name}'
+        """))
+        if not result.fetchone():
+            op.add_column('prospects', sa.Column(column_name, column_type, nullable=True))
+    
+    # Check and add raw API response columns
+    api_payload_columns = [
+        ('dataforseo_payload', sa.dialects.postgresql.JSONB),
+        ('snov_payload', sa.dialects.postgresql.JSONB),
+    ]
+    
+    for column_name, column_type in api_payload_columns:
+        result = conn.execute(text(f"""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'prospects' 
+            AND column_name = '{column_name}'
+        """))
+        if not result.fetchone():
+            op.add_column('prospects', sa.Column(column_name, column_type, nullable=True))
+    
     # Check and add discovery_query_id if missing
     result = conn.execute(text("""
         SELECT column_name 

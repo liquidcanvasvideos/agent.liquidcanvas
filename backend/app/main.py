@@ -296,6 +296,35 @@ async def startup():
                     else:
                         logger.info(f"✅ {column_name} column already exists")
                 
+                # Ensure scraping and verification metadata columns exist (required for pipeline queries)
+                metadata_columns = [
+                    ("scrape_payload", "JSONB"),
+                    ("scrape_source_url", "TEXT"),
+                    ("verification_confidence", "NUMERIC(5, 2)"),
+                    ("verification_payload", "JSONB"),
+                    ("dataforseo_payload", "JSONB"),
+                    ("snov_payload", "JSONB"),
+                ]
+                
+                for column_name, sql_type in metadata_columns:
+                    column_check = await conn.execute(
+                        text("""
+                            SELECT column_name
+                            FROM information_schema.columns 
+                            WHERE table_name = 'prospects' 
+                            AND column_name = :column_name
+                        """),
+                        {"column_name": column_name}
+                    )
+                    if not column_check.fetchone():
+                        logger.warning(f"⚠️  Missing {column_name} column - adding it now...")
+                        await conn.execute(
+                            text(f"ALTER TABLE prospects ADD COLUMN {column_name} {sql_type}")
+                        )
+                        logger.info(f"✅ Added {column_name} column")
+                    else:
+                        logger.info(f"✅ {column_name} column already exists")
+                
                 # BULLETPROOF FIX: Ensure ALL pipeline status columns exist
                 # Required columns for /api/pipeline/status and pipeline endpoints to work without 500 errors
                 # Format: (column_name, sql_type, default_value, should_be_not_null)

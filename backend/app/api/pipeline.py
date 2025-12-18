@@ -685,7 +685,7 @@ async def get_websites(
         "data": [{
             "id": str(p.id),
             "domain": p.domain,
-            "url": p.url or f"https://{p.domain}",
+            "url": p.page_url or f"https://{p.domain}",
             "title": p.page_title or p.domain,
             "category": p.discovery_category or "Unknown",
             "location": p.discovery_location or "Unknown",

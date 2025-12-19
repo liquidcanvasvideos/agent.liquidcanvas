@@ -234,10 +234,31 @@ async def startup():
                     raise  # Re-raise to prevent startup
                 except Exception as verify_err:
                     logger.error(f"❌ Error during schema validation: {verify_err}", exc_info=True)
-                    # Don't fail startup on validation errors, but log heavily
-                    logger.warning("⚠️  Schema validation failed, but continuing startup (may cause issues)")
+                    # CRITICAL: Still try to fix schema even if validation had errors
+                    logger.warning("⚠️  Schema validation had errors, attempting to fix schema anyway...")
+                    try:
+                        from app.utils.schema_validator import ensure_prospect_schema
+                        fixed = await ensure_prospect_schema(engine)
+                        if fixed:
+                            logger.info("✅ Schema fixed despite validation errors")
+                        else:
+                            logger.error("❌ Could not fix schema after validation errors")
+                    except Exception as fix_err:
+                        logger.error(f"❌ Failed to fix schema: {fix_err}", exc_info=True)
             except Exception as migration_error:
                 logger.error(f"❌ Migration failed: {migration_error}", exc_info=True)
+                # CRITICAL: Even if migrations fail, try to fix schema
+                logger.warning("⚠️  Migrations failed, attempting to fix schema directly...")
+                try:
+                    from app.utils.schema_validator import ensure_prospect_schema
+                    fixed = await ensure_prospect_schema(engine)
+                    if fixed:
+                        logger.info("✅ Schema fixed directly (migrations failed but schema is now correct)")
+                    else:
+                        logger.error("❌ Could not fix schema after migration failure")
+                except Exception as fix_err:
+                    logger.error(f"❌ Failed to fix schema after migration failure: {fix_err}", exc_info=True)
+                
                 # Try to create tables directly if migrations fail (first deploy)
                 try:
                     async with engine.begin() as conn:

@@ -1101,13 +1101,13 @@ async def get_websites(
                 status_code=500,
                 detail=f"Database query failed: {str(query_err)}. This indicates a schema mismatch - check logs."
             )
-    
-    total_result = await db.execute(
-        select(func.count(Prospect.id)).where(
-            Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
+        
+        total_result = await db.execute(
+            select(func.count(Prospect.id)).where(
+                Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
+            )
         )
-    )
-    total = total_result.scalar() or 0
+        total = total_result.scalar() or 0
         logger.info(f"🔍 [WEBSITES] Total prospects with discovery_status = 'DISCOVERED': {total}")
         
         # Safely build response data with error handling
@@ -1119,12 +1119,12 @@ async def get_websites(
                     "domain": p.domain or "",
                     "url": p.page_url or (f"https://{p.domain}" if p.domain else ""),
                     "title": p.page_title or p.domain or "",
-            "category": p.discovery_category or "Unknown",
-            "location": p.discovery_location or "Unknown",
-            "discovery_job_id": str(p.discovery_query_id) if p.discovery_query_id else None,
-            "discovered_at": p.created_at.isoformat() if p.created_at else None,
-            "scrape_status": p.scrape_status or "DISCOVERED",
-            "approval_status": p.approval_status or "PENDING",
+                    "category": p.discovery_category or "Unknown",
+                    "location": p.discovery_location or "Unknown",
+                    "discovery_job_id": str(p.discovery_query_id) if p.discovery_query_id else None,
+                    "discovered_at": p.created_at.isoformat() if p.created_at else None,
+                    "scrape_status": p.scrape_status or "DISCOVERED",
+                    "approval_status": p.approval_status or "PENDING",
                 })
             except Exception as e:
                 logger.error(f"❌ Error processing website {getattr(p, 'id', 'unknown')}: {e}", exc_info=True)
@@ -1137,29 +1137,30 @@ async def get_websites(
         # Ensure we always return a valid response structure
         response = {
             "data": data,
-        "total": total,
-        "skip": skip,
-        "limit": limit
-    }
+            "total": total,
+            "skip": skip,
+            "limit": limit
+        }
         
         # Log first few items for debugging
         if len(data) > 0:
             logger.info(f"📊 [WEBSITES] First website sample: {data[0] if data else 'N/A'}")
         
         return response
+    except HTTPException:
+        # Re-raise HTTP exceptions (already handled)
+        raise
     except Exception as e:
-        logger.error(f"❌ Error in get_websites endpoint: {e}", exc_info=True)
+        # CRITICAL: Do NOT return empty array - raise error instead
+        logger.error(f"❌ [WEBSITES] Unexpected error: {e}", exc_info=True)
         try:
             await db.rollback()  # Rollback on exception to prevent transaction poisoning
         except Exception as rollback_err:
             logger.error(f"❌ Error during rollback: {rollback_err}", exc_info=True)
-        # Return empty result instead of 500 error
-    return {
-            "data": [],
-            "total": 0,
-            "skip": skip,
-            "limit": limit
-        }
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}. Check logs for details."
+        )
 
 
 @router.get("/debug/counts")

@@ -71,20 +71,46 @@ class GmailClient:
         
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
+                logger.debug(f"Refreshing Gmail access token with client_id: {self.client_id[:20]}...")
                 response = await client.post(url, data=payload)
+                
+                # Log response status for debugging
+                logger.debug(f"Token refresh response status: {response.status_code}")
+                
+                if response.status_code != 200:
+                    error_text = response.text
+                    logger.error(f"Token refresh failed with status {response.status_code}: {error_text}")
+                    # Provide more helpful error messages
+                    if response.status_code == 400:
+                        try:
+                            error_json = response.json()
+                            error_detail = error_json.get("error_description", error_text)
+                            if "invalid_grant" in error_detail.lower():
+                                logger.error("❌ Invalid refresh token - token may be expired or revoked. Please generate a new refresh token.")
+                            elif "invalid_client" in error_detail.lower():
+                                logger.error("❌ Invalid client credentials - check GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET")
+                        except:
+                            pass
+                    return False
+                
                 response.raise_for_status()
                 result = response.json()
                 
                 self.access_token = result.get("access_token")
                 if self.access_token:
-                    logger.info("✅ Gmail access token refreshed")
+                    logger.info("✅ Gmail access token refreshed successfully")
                     return True
                 else:
                     logger.error("Failed to refresh token: no access_token in response")
+                    logger.error(f"Response: {result}")
                     return False
         
+        except httpx.HTTPStatusError as e:
+            error_text = e.response.text if e.response else "No response text"
+            logger.error(f"HTTP error refreshing Gmail access token: {e.response.status_code} - {error_text}")
+            return False
         except Exception as e:
-            logger.error(f"Failed to refresh Gmail access token: {str(e)}")
+            logger.error(f"Failed to refresh Gmail access token: {str(e)}", exc_info=True)
             return False
     
     async def send_email(

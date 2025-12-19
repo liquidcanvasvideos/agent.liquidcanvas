@@ -69,6 +69,7 @@ async def gmail_health_check():
     
     Checks if Gmail API credentials are configured.
     Returns status and configuration details (without exposing secrets).
+    Optionally tests token refresh if refresh_token is configured.
     """
     logger.info("🔍 Checking Gmail configuration...")
     
@@ -95,7 +96,29 @@ async def gmail_health_check():
         "has_client_secret": has_client_secret,
     }
     
-    if not is_configured:
+    # Test token refresh if refresh_token is configured
+    if has_refresh_token and has_client_id and has_client_secret:
+        try:
+            from app.clients.gmail import GmailClient
+            gmail_client = GmailClient()
+            token_refresh_success = await gmail_client.refresh_access_token()
+            details["token_refresh_test"] = "success" if token_refresh_success else "failed"
+            if token_refresh_success:
+                details["message"] = "Gmail is configured and token refresh works. Ready to send emails."
+            else:
+                details["message"] = "Gmail credentials are set, but token refresh failed. Check refresh token validity."
+                details["troubleshooting"] = (
+                    "Token refresh failed. Possible causes:\n"
+                    "1. Refresh token expired or revoked - generate a new one\n"
+                    "2. OAuth consent screen not configured correctly\n"
+                    "3. Required Gmail API scopes not granted\n"
+                    "4. Client ID/Secret mismatch"
+                )
+        except Exception as e:
+            details["token_refresh_test"] = "error"
+            details["token_refresh_error"] = str(e)
+            details["message"] = f"Gmail credentials are set, but initialization failed: {str(e)}"
+    elif not is_configured:
         details["message"] = (
             "Gmail is not configured. To enable email sending, set one of the following:\n"
             "Option 1: Set GMAIL_ACCESS_TOKEN (temporary, expires)\n"

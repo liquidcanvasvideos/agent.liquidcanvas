@@ -771,23 +771,36 @@ async def list_scraped_emails(
     current_user: Optional[str] = Depends(get_current_user_optional)
 ):
     """
-    List ALL prospects with emails (scraped emails view)
+    List prospects with scraped or enriched emails
     
-    Returns ALL prospects that have emails, regardless of scrape_status.
-    This shows all prospects with emails, whether scraped, enriched, or manually added.
+    SINGLE SOURCE OF TRUTH:
+    - contact_email IS NOT NULL
+    AND
+    - scrape_status IN ("SCRAPED", "ENRICHED")
+    
+    This shows prospects that have been scraped or enriched, not manually added.
     """
     try:
-        # Scraped Emails tab - contact_email IS NOT NULL (show ALL prospects with emails)
-        # Removed scrape_status filter to show all prospects with emails
-        logger.info(f"🔍 [SCRAPED EMAILS] Querying prospects with contact_email IS NOT NULL (skip={skip}, limit={limit})")
+        from app.models.prospect import ScrapeStatus
+        
+        # SINGLE SOURCE OF TRUTH: contact_email IS NOT NULL AND scrape_status IN ("SCRAPED", "ENRICHED")
+        logger.info(f"🔍 [SCRAPED EMAILS] Querying prospects with contact_email IS NOT NULL AND scrape_status IN ('SCRAPED', 'ENRICHED') (skip={skip}, limit={limit})")
         
         query = select(Prospect).where(
-            Prospect.contact_email.isnot(None)
+            Prospect.contact_email.isnot(None),
+            Prospect.scrape_status.in_([
+                ScrapeStatus.SCRAPED.value,
+                ScrapeStatus.ENRICHED.value
+            ])
         ).order_by(Prospect.created_at.desc())
         
         # Get total count
         count_query = select(func.count(Prospect.id)).where(
-            Prospect.contact_email.isnot(None)
+            Prospect.contact_email.isnot(None),
+            Prospect.scrape_status.in_([
+                ScrapeStatus.SCRAPED.value,
+                ScrapeStatus.ENRICHED.value
+            ])
         )
         
         total_result = await db.execute(count_query)
@@ -868,8 +881,16 @@ async def list_prospects(
     }
     
     try:
-        # DEBUG: Log incoming parameters
+        # DEBUG: Log incoming parameters and total prospects count
         logger.info(f"🔍 GET /api/prospects - skip={skip}, limit={limit}, status={status}, min_score={min_score}, has_email={has_email} (type: {type(has_email)})")
+        
+        # Log total prospects count for debugging
+        try:
+            total_all_result = await db.execute(select(func.count(Prospect.id)))
+            total_all = total_all_result.scalar() or 0
+            logger.info(f"📊 [LIST PROSPECTS] Total prospects in database: {total_all}")
+        except Exception as e:
+            logger.warning(f"⚠️  Could not count total prospects: {e}")
         
         # Parse pagination (support both page-based and skip-based)
         try:
@@ -938,7 +959,15 @@ async def list_prospects(
             response_data["data"] = {"data": [], "prospects": [], "total": 0, "page": page, "totalPages": 0, "skip": skip, "limit": limit}
             return response_data
         
-        logger.info(f"🔍 Query filters applied successfully")
+        # Log filter criteria
+        filter_summary = []
+        if status:
+            filter_summary.append(f"outreach_status={status}")
+        if min_score is not None:
+            filter_summary.append(f"min_score={min_score}")
+        if has_email_bool is not None:
+            filter_summary.append(f"has_email={has_email_bool}")
+        logger.info(f"🔍 Query filters applied: {', '.join(filter_summary) if filter_summary else 'NONE (showing all prospects)'}")
         
         # Get total count
         logger.info(f"🔍 Executing count query...")
@@ -1171,14 +1200,33 @@ async def compose_email(
         previous_logs = previous_emails_query.scalars().all()
         
         # Also check prospects with final_body (sent emails)
-        previous_prospects_query = await db.execute(
-            select(Prospect).where(
-                Prospect.thread_id == prospect.thread_id,
-                Prospect.id != prospect_id,
-                Prospect.final_body.isnot(None)
-            ).order_by(Prospect.last_sent.asc())
-        )
-        previous_prospects = previous_prospects_query.scalars().all()
+        # Defensive: Check if final_body column exists before querying
+        previous_prospects = []
+        try:
+            from sqlalchemy import text
+            # Check if final_body column exists
+            column_check = await db.execute(
+                text("""
+                    SELECT column_name
+                    FROM information_schema.columns 
+                    WHERE table_name = 'prospects' 
+                    AND column_name = 'final_body'
+                """)
+            )
+            if column_check.fetchone():
+                # Column exists - safe to query
+                previous_prospects_query = await db.execute(
+                    select(Prospect).where(
+                        Prospect.thread_id == prospect.thread_id,
+                        Prospect.id != prospect_id,
+                        Prospect.final_body.isnot(None)
+                    ).order_by(Prospect.last_sent.asc())
+                )
+                previous_prospects = previous_prospects_query.scalars().all()
+            else:
+                logger.warning("⚠️  final_body column doesn't exist - skipping prospect history check")
+        except Exception as e:
+            logger.warning(f"⚠️  Error checking final_body column: {e}")
         
         # Build previous emails list
         previous_emails = []
@@ -1191,9 +1239,11 @@ async def compose_email(
             })
         
         for prev_prospect in previous_prospects:
+            # Safely access final_body (may not exist)
+            final_body = getattr(prev_prospect, 'final_body', None)
             previous_emails.append({
                 "subject": prev_prospect.draft_subject or "No subject",
-                "body": prev_prospect.final_body or "",
+                "body": final_body or "",
                 "sent_at": prev_prospect.last_sent.isoformat() if prev_prospect.last_sent else "",
                 "sequence_index": prev_prospect.sequence_index or 0
             })

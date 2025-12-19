@@ -764,18 +764,38 @@ async def get_pipeline_status(
     Get overall pipeline status - counts for each step
     DATA-DRIVEN: All counts derived ONLY from Prospect state, NOT from jobs
     This is the single source of truth for pipeline state.
+    
+    SINGLE SOURCE OF TRUTH MAPPING:
+    - DISCOVERED → discovery_status = "DISCOVERED"
+    - SCRAPED → scrape_status IN ("SCRAPED", "ENRICHED")
+    - VERIFIED → verification_status = "VERIFIED"
+    - DRAFTED → draft_status = "DRAFTED"
+    - SENT → send_status = "SENT"
     """
     logger.info("📊 [PIPELINE STATUS] Computing data-driven counts from Prospect table")
+    
+    # First, log total prospects count for debugging
+    try:
+        total_prospects_result = await db.execute(
+            select(func.count(Prospect.id))
+        )
+        total_prospects = total_prospects_result.scalar() or 0
+        logger.info(f"📊 [PIPELINE STATUS] Total prospects in database: {total_prospects}")
+    except Exception as e:
+        logger.error(f"❌ Error counting total prospects: {e}", exc_info=True)
+        total_prospects = 0
     
     # Wrap entire endpoint in try-catch to handle transaction errors
     try:
         # Step 1: DISCOVERED (canonical status for discovered websites)
+        # SINGLE SOURCE OF TRUTH: discovery_status = "DISCOVERED"
         discovered = await db.execute(
-        select(func.count(Prospect.id)).where(
-            Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
-        )
+            select(func.count(Prospect.id)).where(
+                Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
+            )
         )
         discovered_count = discovered.scalar() or 0
+        logger.info(f"📊 [PIPELINE STATUS] DISCOVERED count: {discovered_count} (discovery_status = 'DISCOVERED')")
         
         # Step 2: APPROVED (approval_status = "approved")
         approved = await db.execute(
@@ -783,14 +803,18 @@ async def get_pipeline_status(
         )
         approved_count = approved.scalar() or 0
         
-        # Step 3: SCRAPED = Prospects where email IS NOT NULL
-        # USER RULE: Scraped count = Prospects where email IS NOT NULL
+        # Step 3: SCRAPED = Prospects with scrape_status IN ("SCRAPED", "ENRICHED")
+        # SINGLE SOURCE OF TRUTH: scrape_status IN ("SCRAPED", "ENRICHED")
         scraped = await db.execute(
             select(func.count(Prospect.id)).where(
-                Prospect.contact_email.isnot(None)
+                Prospect.scrape_status.in_([
+                    ScrapeStatus.SCRAPED.value,
+                    ScrapeStatus.ENRICHED.value
+                ])
             )
         )
         scraped_count = scraped.scalar() or 0
+        logger.info(f"📊 [PIPELINE STATUS] SCRAPED count: {scraped_count} (scrape_status IN ('SCRAPED', 'ENRICHED'))")
         
         # Scrape-ready: any DISCOVERED prospect that has NOT been explicitly rejected.
         # This unlocks scraping as soon as at least one website has been discovered,
@@ -890,13 +914,14 @@ async def get_pipeline_status(
         emails_found_count = emails_found.scalar() or 0
         
         # Step 4: VERIFIED = Prospects where verification_status == "verified"
-        # USER RULE: Verified count = Prospects where verification_status == "verified"
+        # SINGLE SOURCE OF TRUTH: verification_status = "verified"
         verified = await db.execute(
             select(func.count(Prospect.id)).where(
                 Prospect.verification_status == VerificationStatus.VERIFIED.value
             )
         )
         verified_count = verified.scalar() or 0
+        logger.info(f"📊 [PIPELINE STATUS] VERIFIED count: {verified_count} (verification_status = 'verified')")
         
         # Also count verified with email (for backwards compatibility)
         emails_verified = await db.execute(
@@ -921,35 +946,32 @@ async def get_pipeline_status(
         drafting_ready = draft_ready_count
         drafting_ready_count = draft_ready_count
         
-        # Step 6: DRAFTED = Prospects where draft_subject IS NOT NULL
-        # USER RULE: Drafted count = Prospects where draft_subject IS NOT NULL
-        # Use draft_subject as indicator (draft exists if subject exists)
-        # REMOVED: drafted_at column doesn't exist in database
+        # Step 6: DRAFTED = Prospects where draft_status = "drafted"
+        # SINGLE SOURCE OF TRUTH: draft_status = "drafted"
         drafted_count = 0
         try:
             drafted = await db.execute(
                 select(func.count(Prospect.id)).where(
-                    Prospect.draft_subject.isnot(None)
+                    Prospect.draft_status == DraftStatus.DRAFTED.value
                 )
             )
             drafted_count = drafted.scalar() or 0
+            logger.info(f"📊 [PIPELINE STATUS] DRAFTED count: {drafted_count} (draft_status = 'drafted')")
         except Exception as e:
             logger.error(f"❌ Error counting drafted prospects: {e}", exc_info=True)
             drafted_count = 0
         
-        # Step 7: SENT = Prospects where last_sent IS NOT NULL
-        # USER RULE: Sent count = Prospects where last_sent IS NOT NULL
-        # Defensive: Use raw SQL to avoid transaction errors
+        # Step 7: SENT = Prospects where send_status = "sent"
+        # SINGLE SOURCE OF TRUTH: send_status = "sent"
         sent_count = 0
         try:
-            sent_result = await db.execute(
-                text("""
-                    SELECT COUNT(*) 
-                    FROM prospects 
-                    WHERE last_sent IS NOT NULL
-                """)
+            sent = await db.execute(
+                select(func.count(Prospect.id)).where(
+                    Prospect.send_status == SendStatus.SENT.value
+                )
             )
-            sent_count = sent_result.scalar() or 0
+            sent_count = sent.scalar() or 0
+            logger.info(f"📊 [PIPELINE STATUS] SENT count: {sent_count} (send_status = 'sent')")
         except Exception as e:
             logger.error(f"❌ Error counting sent prospects: {e}", exc_info=True)
             sent_count = 0

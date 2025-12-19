@@ -2,7 +2,7 @@
 Google Gemini API client for email composition
 """
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import os
 from dotenv import load_dotenv
 import logging

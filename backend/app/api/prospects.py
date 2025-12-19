@@ -659,33 +659,21 @@ async def list_leads(
     current_user: Optional[str] = Depends(get_current_user_optional)
 ):
     """
-    List prospects with emails that are verified or pending verification
+    List ALL prospects with emails (cumulative view)
     
-    TASK 3: Leads tab requirements:
-    - contact_email IS NOT NULL
-    - verification_status IN ('pending', 'verified')
-    
-    This shows all prospects with emails that are ready for or have been verified.
+    Shows all prospects that have emails, regardless of verification status.
+    This is a HISTORICAL view showing all prospects with emails.
     """
     try:
-        from app.models.prospect import VerificationStatus
-        
-        # TASK 3: Leads tab - contact_email IS NOT NULL AND verification_status IN ('pending','verified')
+        # Leads tab - contact_email IS NOT NULL (show ALL prospects with emails)
+        # Removed verification_status filter to show all prospects with emails
         query = select(Prospect).where(
-            Prospect.contact_email.isnot(None),
-            Prospect.verification_status.in_([
-                VerificationStatus.PENDING.value,
-                VerificationStatus.VERIFIED.value
-            ])
+            Prospect.contact_email.isnot(None)
         ).order_by(Prospect.created_at.desc())
         
         # Get total count
         count_query = select(func.count(Prospect.id)).where(
-            Prospect.contact_email.isnot(None),
-            Prospect.verification_status.in_([
-                VerificationStatus.PENDING.value,
-                VerificationStatus.VERIFIED.value
-            ])
+            Prospect.contact_email.isnot(None)
         )
         
         total_result = await db.execute(count_query)
@@ -738,35 +726,21 @@ async def list_scraped_emails(
     current_user: Optional[str] = Depends(get_current_user_optional)
 ):
     """
-    List prospects with scraped or verified emails
+    List ALL prospects with emails (scraped emails view)
     
-    Returns prospects where:
-    - contact_email IS NOT NULL
-    AND
-    - scrape_status IN ('SCRAPED', 'ENRICHED')
-    
-    This shows all prospects that have been scraped, regardless of current stage.
+    Returns ALL prospects that have emails, regardless of scrape_status.
+    This shows all prospects with emails, whether scraped, enriched, or manually added.
     """
     try:
-        from app.models.prospect import ScrapeStatus
-        
-        # Query prospects with emails AND scraping_status indicating they were scraped
-        # TASK 3: Scraped Emails tab - contact_email IS NOT NULL AND scrape_status IN ('SCRAPED','ENRICHED')
+        # Scraped Emails tab - contact_email IS NOT NULL (show ALL prospects with emails)
+        # Removed scrape_status filter to show all prospects with emails
         query = select(Prospect).where(
-            Prospect.contact_email.isnot(None),
-            Prospect.scrape_status.in_([
-                ScrapeStatus.SCRAPED.value,
-                ScrapeStatus.ENRICHED.value
-            ])
+            Prospect.contact_email.isnot(None)
         ).order_by(Prospect.created_at.desc())
         
         # Get total count
         count_query = select(func.count(Prospect.id)).where(
-            Prospect.contact_email.isnot(None),
-            Prospect.scrape_status.in_([
-                ScrapeStatus.SCRAPED.value,
-                ScrapeStatus.ENRICHED.value
-            ])
+            Prospect.contact_email.isnot(None)
         )
         
         total_result = await db.execute(count_query)

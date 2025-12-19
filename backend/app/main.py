@@ -174,6 +174,33 @@ async def startup():
             try:
                 command.upgrade(alembic_cfg, "head")
                 logger.info("✅ Database migrations completed successfully")
+                
+                # CRITICAL: After migrations, verify final_body column exists
+                # If not, add it manually to prevent SELECT errors
+                try:
+                    from sqlalchemy import text
+                    async with engine.begin() as conn:
+                        # Check if final_body exists
+                        result = await conn.execute(text("""
+                            SELECT column_name 
+                            FROM information_schema.columns 
+                            WHERE table_name = 'prospects' 
+                            AND column_name = 'final_body'
+                        """))
+                        if not result.fetchone():
+                            logger.warning("⚠️  final_body column missing after migrations - adding manually...")
+                            await conn.execute(text("ALTER TABLE prospects ADD COLUMN IF NOT EXISTS final_body TEXT"))
+                            await conn.execute(text("ALTER TABLE prospects ADD COLUMN IF NOT EXISTS thread_id UUID"))
+                            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_prospects_thread_id ON prospects(thread_id)"))
+                            await conn.execute(text("ALTER TABLE prospects ADD COLUMN IF NOT EXISTS sequence_index INTEGER"))
+                            await conn.execute(text("UPDATE prospects SET sequence_index = 0 WHERE sequence_index IS NULL"))
+                            await conn.execute(text("ALTER TABLE prospects ALTER COLUMN sequence_index SET NOT NULL"))
+                            await conn.execute(text("ALTER TABLE prospects ALTER COLUMN sequence_index SET DEFAULT 0"))
+                            logger.info("✅ Manually added missing columns (final_body, thread_id, sequence_index)")
+                        else:
+                            logger.info("✅ final_body column exists - schema is correct")
+                except Exception as verify_err:
+                    logger.error(f"❌ Error verifying/adding columns: {verify_err}", exc_info=True)
             except Exception as migration_error:
                 logger.error(f"❌ Migration failed: {migration_error}", exc_info=True)
                 # Try to create tables directly if migrations fail (first deploy)

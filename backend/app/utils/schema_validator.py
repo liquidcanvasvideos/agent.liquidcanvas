@@ -98,42 +98,70 @@ async def ensure_prospect_schema(engine: AsyncEngine) -> bool:
             col = model_columns[col_name]
             
             # Determine SQL type
-            if hasattr(col.type, 'python_type'):
+            # Check for UUID type first (before python_type check)
+            type_str = str(col.type)
+            if 'UUID' in type_str or 'uuid' in type_str.lower():
+                sql_type = "UUID"
+            elif hasattr(col.type, 'python_type'):
                 if col.type.python_type == str:
                     sql_type = "TEXT" if col.type.length is None else f"VARCHAR({col.type.length})"
                 elif col.type.python_type == int:
                     sql_type = "INTEGER"
                 elif col.type.python_type == bool:
                     sql_type = "BOOLEAN"
-                elif hasattr(col.type, 'as_generic') and 'UUID' in str(col.type):
-                    sql_type = "UUID"
                 else:
                     sql_type = "TEXT"  # Fallback
             else:
                 sql_type = "TEXT"  # Fallback
             
             # Build ALTER TABLE statement
-            nullable = "NULL" if col.nullable else "NOT NULL"
-            default = ""
-            
-            if col.default is not None:
-                if hasattr(col.default, 'arg'):
-                    default_val = col.default.arg
-                    if isinstance(default_val, str):
-                        default = f"DEFAULT '{default_val}'"
-                    elif isinstance(default_val, (int, float)):
-                        default = f"DEFAULT {default_val}"
-                    elif isinstance(default_val, bool):
-                        default = f"DEFAULT {str(default_val).lower()}"
-            
-            alter_sql = f"ALTER TABLE prospects ADD COLUMN {col_name} {sql_type} {nullable} {default}"
+            # Add column as nullable first, then set constraints if needed
+            alter_sql = f"ALTER TABLE prospects ADD COLUMN {col_name} {sql_type}"
             
             try:
+                # Step 1: Add column (nullable first)
                 await conn.execute(text(alter_sql))
                 logger.info(f"✅ Added column: {col_name} ({sql_type})")
                 
-                # Create index if needed
-                if col_name in ['thread_id'] or col.index:
+                # Step 2: Backfill with default if NOT NULL is required
+                if not col.nullable and col.default is not None:
+                    default_val = None
+                    if hasattr(col.default, 'arg'):
+                        default_val = col.default.arg
+                    elif hasattr(col.default, 'value'):
+                        default_val = col.default.value
+                    
+                    if default_val is not None:
+                        if sql_type == "INTEGER":
+                            await conn.execute(text(f"UPDATE prospects SET {col_name} = {default_val} WHERE {col_name} IS NULL"))
+                        elif sql_type == "BOOLEAN":
+                            await conn.execute(text(f"UPDATE prospects SET {col_name} = {str(default_val).lower()} WHERE {col_name} IS NULL"))
+                        else:
+                            await conn.execute(text(f"UPDATE prospects SET {col_name} = '{default_val}' WHERE {col_name} IS NULL"))
+                        
+                        # Step 3: Set NOT NULL after backfill
+                        await conn.execute(text(f"ALTER TABLE prospects ALTER COLUMN {col_name} SET NOT NULL"))
+                        logger.info(f"✅ Set {col_name} as NOT NULL with default backfill")
+                
+                # Step 4: Set default value if specified
+                if col.default is not None:
+                    default_val = None
+                    if hasattr(col.default, 'arg'):
+                        default_val = col.default.arg
+                    elif hasattr(col.default, 'value'):
+                        default_val = col.default.value
+                    
+                    if default_val is not None:
+                        if sql_type == "INTEGER":
+                            await conn.execute(text(f"ALTER TABLE prospects ALTER COLUMN {col_name} SET DEFAULT {default_val}"))
+                        elif sql_type == "BOOLEAN":
+                            await conn.execute(text(f"ALTER TABLE prospects ALTER COLUMN {col_name} SET DEFAULT {str(default_val).lower()}"))
+                        else:
+                            await conn.execute(text(f"ALTER TABLE prospects ALTER COLUMN {col_name} SET DEFAULT '{default_val}'"))
+                        logger.info(f"✅ Set default value for {col_name}")
+                
+                # Step 5: Create index if needed
+                if col_name in ['thread_id'] or (hasattr(col, 'index') and col.index):
                     try:
                         await conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_prospects_{col_name} ON prospects({col_name})"))
                         logger.info(f"✅ Created index for: {col_name}")
@@ -141,7 +169,7 @@ async def ensure_prospect_schema(engine: AsyncEngine) -> bool:
                         logger.warning(f"⚠️  Could not create index for {col_name}: {idx_err}")
                 
             except Exception as e:
-                logger.error(f"❌ Failed to add column {col_name}: {e}")
+                logger.error(f"❌ Failed to add column {col_name}: {e}", exc_info=True)
                 return False
         
         # Verify all columns now exist

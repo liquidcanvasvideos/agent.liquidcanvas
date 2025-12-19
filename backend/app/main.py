@@ -97,7 +97,7 @@ app.add_middleware(
 )
 
 # Include routers
-from app.api import auth, settings, scraper, pipeline, manual
+from app.api import auth, settings, scraper, pipeline, manual, health
 # To use Supabase Auth instead, replace the line below with:
 # from app.api import auth_supabase
 # app.include_router(auth_supabase.router, prefix="/api/auth", tags=["auth"])
@@ -108,6 +108,7 @@ app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(scraper.router, prefix="/api/scraper", tags=["scraper"])
 app.include_router(pipeline.router, tags=["pipeline"])  # Already has /api/pipeline prefix
 app.include_router(manual.router, tags=["manual"])  # Already has /api/manual prefix
+app.include_router(health.router, tags=["health"])  # Health check endpoints
 
 # Webhook routes
 from app.api import webhooks
@@ -175,48 +176,53 @@ async def startup():
                 command.upgrade(alembic_cfg, "head")
                 logger.info("✅ Database migrations completed successfully")
                 
-                # CRITICAL: After migrations, verify final_body column exists
-                # If not, add it manually to prevent SELECT errors
+                # CRITICAL: Validate schema after migrations
+                # FAIL FAST if schema doesn't match model
                 try:
-                    from sqlalchemy import text
-                    async with engine.begin() as conn:
-                        # Check if final_body exists
-                        result = await conn.execute(text("""
-                            SELECT column_name 
-                            FROM information_schema.columns 
-                            WHERE table_name = 'prospects' 
-                            AND column_name = 'final_body'
-                        """))
-                        if not result.fetchone():
-                            logger.warning("⚠️  final_body column missing after migrations - adding manually...")
-                            try:
-                                await conn.execute(text("ALTER TABLE prospects ADD COLUMN IF NOT EXISTS final_body TEXT"))
-                                logger.info("✅ Added final_body column")
-                            except Exception as e:
-                                logger.error(f"❌ Error adding final_body: {e}")
-                            
-                            try:
-                                await conn.execute(text("ALTER TABLE prospects ADD COLUMN IF NOT EXISTS thread_id UUID"))
-                                await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_prospects_thread_id ON prospects(thread_id)"))
-                                logger.info("✅ Added thread_id column with index")
-                            except Exception as e:
-                                logger.error(f"❌ Error adding thread_id: {e}")
-                            
-                            try:
-                                await conn.execute(text("ALTER TABLE prospects ADD COLUMN IF NOT EXISTS sequence_index INTEGER"))
-                                await conn.execute(text("UPDATE prospects SET sequence_index = 0 WHERE sequence_index IS NULL"))
-                                await conn.execute(text("ALTER TABLE prospects ALTER COLUMN sequence_index SET NOT NULL"))
-                                await conn.execute(text("ALTER TABLE prospects ALTER COLUMN sequence_index SET DEFAULT 0"))
-                                logger.info("✅ Added sequence_index column")
-                            except Exception as e:
-                                logger.error(f"❌ Error adding sequence_index: {e}")
-                            
-                            await conn.commit()
-                            logger.info("✅ Manually added missing columns (final_body, thread_id, sequence_index)")
-                        else:
-                            logger.info("✅ final_body column exists - schema is correct")
+                    from app.utils.schema_validator import validate_prospect_schema, ensure_prospect_schema, SchemaMismatchError
+                    
+                    logger.info("🔍 Validating schema after migrations...")
+                    is_valid, missing_columns = await validate_prospect_schema(engine, Base)
+                    
+                    if not is_valid:
+                        logger.error(f"❌ SCHEMA MISMATCH DETECTED: Missing columns: {missing_columns}")
+                        logger.error("❌ Attempting to fix schema automatically...")
+                        
+                        # Try to fix automatically
+                        fixed = await ensure_prospect_schema(engine)
+                        
+                        if not fixed:
+                            logger.error("❌ CRITICAL: Could not fix schema mismatch automatically")
+                            logger.error("❌ Application will refuse to start to prevent silent failures")
+                            logger.error("❌ Please run migrations manually or fix schema manually")
+                            raise SchemaMismatchError(
+                                f"Schema mismatch: Missing columns {missing_columns}. "
+                                "Run migrations or fix schema manually before starting application."
+                            )
+                        
+                        # Re-validate after fix
+                        is_valid, still_missing = await validate_prospect_schema(engine, Base)
+                        if not is_valid:
+                            raise SchemaMismatchError(
+                                f"Schema still invalid after fix attempt. Missing: {still_missing}"
+                            )
+                        
+                        logger.info("✅ Schema fixed automatically - validation passed")
+                    else:
+                        logger.info("✅ Schema validation passed: ORM model matches database")
+                        
+                except SchemaMismatchError as schema_err:
+                    # FAIL FAST - don't start application with broken schema
+                    logger.error("=" * 80)
+                    logger.error("❌ CRITICAL SCHEMA MISMATCH - APPLICATION WILL NOT START")
+                    logger.error("=" * 80)
+                    logger.error(f"Error: {schema_err}")
+                    logger.error("=" * 80)
+                    raise  # Re-raise to prevent startup
                 except Exception as verify_err:
-                    logger.error(f"❌ Error verifying/adding columns: {verify_err}", exc_info=True)
+                    logger.error(f"❌ Error during schema validation: {verify_err}", exc_info=True)
+                    # Don't fail startup on validation errors, but log heavily
+                    logger.warning("⚠️  Schema validation failed, but continuing startup (may cause issues)")
             except Exception as migration_error:
                 logger.error(f"❌ Migration failed: {migration_error}", exc_info=True)
                 # Try to create tables directly if migrations fail (first deploy)

@@ -142,7 +142,7 @@ class Prospect(Base):
     draft_subject = Column(Text)  # Draft email subject
     draft_body = Column(Text)  # Draft email body
     # drafted_at = Column(DateTime(timezone=True))  # REMOVED: Column doesn't exist in database
-    # final_body = Column(Text, nullable=True)  # TEMPORARILY COMMENTED: Uncomment after migration runs
+    final_body = Column(Text, nullable=True)  # Final email body (after sending, moved from draft_body)
     thread_id = Column(UUID(as_uuid=True), nullable=True, index=True)  # Thread ID for follow-up emails
     sequence_index = Column(Integer, default=0, nullable=False)  # Follow-up sequence (0 = initial, 1+ = follow-up)
     is_manual = Column(Boolean, default=False, nullable=True)  # True if manually added, False otherwise

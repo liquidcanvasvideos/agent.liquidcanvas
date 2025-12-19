@@ -104,9 +104,9 @@ async def discover_websites(
         logger.error(f"❌ [PIPELINE STEP 1] Failed to start discovery job: {e}", exc_info=True)
         try:
             await db.rollback()  # Rollback on exception to prevent transaction poisoning
-            job.status = "failed"
-            job.error_message = str(e)
-            await db.commit()
+        job.status = "failed"
+        job.error_message = str(e)
+        await db.commit()
         except Exception as rollback_err:
             logger.error(f"❌ [PIPELINE STEP 1] Error during rollback: {rollback_err}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to start discovery job: {str(e)}")
@@ -292,8 +292,8 @@ async def scrape_websites(
         query = query.where(Prospect.id.in_(request.prospect_ids))
     
     try:
-        result = await db.execute(query)
-        prospects = result.scalars().all()
+    result = await db.execute(query)
+    prospects = result.scalars().all()
     except Exception as query_err:
         logger.error(f"❌ [PIPELINE STEP 3] Query error: {query_err}", exc_info=True)
         await db.rollback()  # Rollback on query failure
@@ -318,9 +318,9 @@ async def scrape_websites(
     )
     
     try:
-        db.add(job)
-        await db.commit()
-        await db.refresh(job)
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
     except Exception as commit_err:
         logger.error(f"❌ [PIPELINE STEP 3] Commit error: {commit_err}", exc_info=True)
         await db.rollback()  # Rollback on commit failure
@@ -339,9 +339,9 @@ async def scrape_websites(
         logger.error(f"❌ [PIPELINE STEP 3] Failed to start scraping job: {e}", exc_info=True)
         try:
             await db.rollback()  # Rollback on exception
-            job.status = "failed"
-            job.error_message = str(e)
-            await db.commit()
+        job.status = "failed"
+        job.error_message = str(e)
+        await db.commit()
         except Exception as rollback_err:
             logger.error(f"❌ [PIPELINE STEP 3] Error during rollback: {rollback_err}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to start scraping job: {str(e)}")
@@ -389,16 +389,16 @@ async def verify_emails(
     # REMOVED: Hard stage filtering (stage = LEAD)
     # Use status flags instead: scraped + email + pending verification
     try:
-        query = select(Prospect).where(
+    query = select(Prospect).where(
             Prospect.scrape_status.in_([ScrapeStatus.SCRAPED.value, ScrapeStatus.ENRICHED.value]),
             Prospect.contact_email.isnot(None),
-            Prospect.verification_status == VerificationStatus.PENDING.value,
-        )
-        if request.prospect_ids:
-            query = query.where(Prospect.id.in_(request.prospect_ids))
-        
-        result = await db.execute(query)
-        prospects = result.scalars().all()
+        Prospect.verification_status == VerificationStatus.PENDING.value,
+    )
+    if request.prospect_ids:
+        query = query.where(Prospect.id.in_(request.prospect_ids))
+    
+    result = await db.execute(query)
+    prospects = result.scalars().all()
     except Exception as e:
         logger.error(f"❌ [PIPELINE STEP 4] Query error: {e}", exc_info=True)
         await db.rollback()  # Rollback on query failure
@@ -423,9 +423,9 @@ async def verify_emails(
     )
     
     try:
-        db.add(job)
-        await db.commit()
-        await db.refresh(job)
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
     except Exception as commit_err:
         logger.error(f"❌ [PIPELINE STEP 4] Commit error: {commit_err}", exc_info=True)
         await db.rollback()  # Rollback on commit failure
@@ -444,9 +444,9 @@ async def verify_emails(
         logger.error(f"❌ [PIPELINE STEP 4] Failed to start verification job: {e}", exc_info=True)
         try:
             await db.rollback()  # Rollback on exception
-            job.status = "failed"
-            job.error_message = str(e)
-            await db.commit()
+        job.status = "failed"
+        job.error_message = str(e)
+        await db.commit()
         except Exception as rollback_err:
             logger.error(f"❌ [PIPELINE STEP 4] Error during rollback: {rollback_err}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to start verification job: {str(e)}")
@@ -556,9 +556,9 @@ async def draft_emails(
             # Column exists - use stage-based query
             # Check for VERIFIED stage (after verification, stage becomes VERIFIED, not LEAD)
             # OR LEAD stage with verified status (in case verification didn't update stage yet)
-            result = await db.execute(
-                select(Prospect).where(
-                    Prospect.id.in_(request.prospect_ids),
+    result = await db.execute(
+        select(Prospect).where(
+            Prospect.id.in_(request.prospect_ids),
                     Prospect.stage.in_([ProspectStage.VERIFIED.value, ProspectStage.LEAD.value]),
                     Prospect.verification_status == VerificationStatus.VERIFIED.value,
                     Prospect.contact_email.isnot(None),
@@ -585,11 +585,11 @@ async def draft_emails(
             select(Prospect).where(
                 Prospect.id.in_(request.prospect_ids),
                 Prospect.verification_status == VerificationStatus.VERIFIED.value,
-                Prospect.contact_email.isnot(None),
-                Prospect.draft_status == "pending"
-            )
+            Prospect.contact_email.isnot(None),
+            Prospect.draft_status == "pending"
         )
-        prospects = result.scalars().all()
+    )
+    prospects = result.scalars().all()
     
     if len(prospects) != len(request.prospect_ids):
         raise HTTPException(
@@ -675,20 +675,20 @@ async def send_emails(
     # Redefine send-ready as: verified + drafted + not sent
     if request.prospect_ids is not None and len(request.prospect_ids) > 0:
         # Manual selection: use provided prospect_ids but validate they meet send-ready criteria
-        result = await db.execute(
-            select(Prospect).where(
-                Prospect.id.in_(request.prospect_ids),
+    result = await db.execute(
+        select(Prospect).where(
+            Prospect.id.in_(request.prospect_ids),
                 Prospect.contact_email.isnot(None),
                 Prospect.verification_status == VerificationStatus.VERIFIED.value,
-                Prospect.draft_subject.isnot(None),
-                Prospect.draft_body.isnot(None),
+            Prospect.draft_subject.isnot(None),
+            Prospect.draft_body.isnot(None),
                 Prospect.send_status != SendStatus.SENT.value
-            )
         )
-        prospects = result.scalars().all()
-        
-        if len(prospects) != len(request.prospect_ids):
-            raise HTTPException(
+    )
+    prospects = result.scalars().all()
+    
+    if len(prospects) != len(request.prospect_ids):
+        raise HTTPException(
                 status_code=422,
                 detail=f"Some prospects not found or not ready for sending. Found {len(prospects)} ready out of {len(request.prospect_ids)} requested. Ensure they have verified email, draft subject, and draft body."
             )
@@ -709,7 +709,7 @@ async def send_emails(
             raise HTTPException(
                 status_code=422,
                 detail="No prospects ready for sending. Ensure prospects have verified email, draft subject, and draft body."
-            )
+        )
     
     logger.info(f"📧 [PIPELINE STEP 7] Sending emails for {len(prospects)} send-ready prospects (data-driven)")
     
@@ -787,40 +787,40 @@ async def get_pipeline_status(
     
     # Wrap entire endpoint in try-catch to handle transaction errors
     try:
-        # Step 1: DISCOVERED (canonical status for discovered websites)
+    # Step 1: DISCOVERED (canonical status for discovered websites)
         # SINGLE SOURCE OF TRUTH: discovery_status = "DISCOVERED"
-        discovered = await db.execute(
-            select(func.count(Prospect.id)).where(
-                Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
-            )
+    discovered = await db.execute(
+        select(func.count(Prospect.id)).where(
+            Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
         )
-        discovered_count = discovered.scalar() or 0
+    )
+    discovered_count = discovered.scalar() or 0
         logger.info(f"📊 [PIPELINE STATUS] DISCOVERED count: {discovered_count} (discovery_status = 'DISCOVERED')")
-        
-        # Step 2: APPROVED (approval_status = "approved")
-        approved = await db.execute(
-            select(func.count(Prospect.id)).where(Prospect.approval_status == "approved")
-        )
-        approved_count = approved.scalar() or 0
-        
+    
+    # Step 2: APPROVED (approval_status = "approved")
+    approved = await db.execute(
+        select(func.count(Prospect.id)).where(Prospect.approval_status == "approved")
+    )
+    approved_count = approved.scalar() or 0
+    
         # Step 3: SCRAPED = Prospects with scrape_status IN ("SCRAPED", "ENRICHED")
         # SINGLE SOURCE OF TRUTH: scrape_status IN ("SCRAPED", "ENRICHED")
-        scraped = await db.execute(
-            select(func.count(Prospect.id)).where(
+    scraped = await db.execute(
+        select(func.count(Prospect.id)).where(
                 Prospect.scrape_status.in_([
                     ScrapeStatus.SCRAPED.value,
                     ScrapeStatus.ENRICHED.value
                 ])
-            )
         )
-        scraped_count = scraped.scalar() or 0
+    )
+    scraped_count = scraped.scalar() or 0
         logger.info(f"📊 [PIPELINE STATUS] SCRAPED count: {scraped_count} (scrape_status IN ('SCRAPED', 'ENRICHED'))")
         
         # Scrape-ready: any DISCOVERED prospect that has NOT been explicitly rejected.
         # This unlocks scraping as soon as at least one website has been discovered,
         # while still allowing optional manual rejection to exclude sites.
         scrape_ready = await db.execute(
-            select(func.count(Prospect.id)).where(
+        select(func.count(Prospect.id)).where(
                 Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value,
                 Prospect.approval_status != "rejected",
             )
@@ -912,15 +912,15 @@ async def get_pipeline_status(
             )
         )
         emails_found_count = emails_found.scalar() or 0
-        
+    
         # Step 4: VERIFIED = Prospects where verification_status == "verified"
         # SINGLE SOURCE OF TRUTH: verification_status = "verified"
-        verified = await db.execute(
-            select(func.count(Prospect.id)).where(
-                Prospect.verification_status == VerificationStatus.VERIFIED.value
-            )
+    verified = await db.execute(
+        select(func.count(Prospect.id)).where(
+            Prospect.verification_status == VerificationStatus.VERIFIED.value
         )
-        verified_count = verified.scalar() or 0
+    )
+    verified_count = verified.scalar() or 0
         logger.info(f"📊 [PIPELINE STATUS] VERIFIED count: {verified_count} (verification_status = 'verified')")
         
         # Also count verified with email (for backwards compatibility)
@@ -999,16 +999,16 @@ async def get_pipeline_status(
         logger.info(f"📊 [PIPELINE STATUS] Counts computed: discovered={discovered_count}, approved={approved_count}, "
                     f"scraped={scraped_count}, verified={verified_count}, draft_ready={draft_ready_count}, "
                     f"drafted={drafted_count}, sent={sent_count}, send_ready={send_ready_count}")
-        
-        # Return pipeline status counts
+    
+    # Return pipeline status counts
         # DATA-DRIVEN: All counts derived from Prospect state only, NOT from jobs
         # Unlock logic:
         # - Verification card is COMPLETE if verified_count > 0
         # - Drafting card is UNLOCKED if verified_count > 0 (draft_ready_count > 0)
         # - Sending card is UNLOCKED if drafted_count > 0
-        return {
-            "discovered": discovered_count,
-            "approved": approved_count,
+    return {
+        "discovered": discovered_count,
+        "approved": approved_count,
             "scraped": scraped_count,  # USER RULE: Prospects where email IS NOT NULL
             "discovered_for_scraping": scrape_ready_count,
             "scrape_ready_count": scrape_ready_count,
@@ -1056,7 +1056,7 @@ async def get_pipeline_status(
             "sent": 0,
             "send_ready": 0,
             "send_ready_count": 0,
-        }
+    }
 
 
 # ============================================
@@ -1081,112 +1081,33 @@ async def get_websites(
         # Pipeline counts: discovery_status = "DISCOVERED"
         logger.info(f"🔍 [WEBSITES] Querying prospects with discovery_status = 'DISCOVERED' (skip={skip}, limit={limit})")
         
-        # Use raw SQL workaround if final_body column doesn't exist
+        # NO WORKAROUNDS - Schema validation ensures columns exist
         try:
-            # First check if final_body column exists
-            from sqlalchemy import text
-            column_check = await db.execute(text("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'prospects' 
-                AND column_name = 'final_body'
-            """))
-            has_final_body = column_check.fetchone() is not None
-            
-            if not has_final_body:
-                # Use raw SQL to select all columns except final_body
-                logger.info("🔧 [WEBSITES] final_body column missing - using raw SQL workaround")
-                raw_query = text(f"""
-                    SELECT id, domain, page_url, page_title, contact_email, contact_method,
-                           da_est, score, discovery_status, approval_status, scrape_status,
-                           verification_status, draft_status, send_status, stage,
-                           outreach_status, last_sent, followups_sent, draft_subject, draft_body,
-                           thread_id, sequence_index, is_manual, serp_intent, serp_confidence,
-                           serp_signals, discovery_query_id, discovery_category, discovery_location,
-                           discovery_keywords, scrape_payload, scrape_source_url,
-                           verification_confidence, verification_payload, dataforseo_payload,
-                           snov_payload, created_at, updated_at
-                    FROM prospects
-                    WHERE discovery_status = 'DISCOVERED'
-                    ORDER BY created_at DESC
-                    LIMIT :limit OFFSET :offset
-                """)
-                result = await db.execute(raw_query, {"limit": limit, "offset": skip})
-                rows = result.fetchall()
-                # Convert rows to Prospect-like objects
-                websites = []
-                for row in rows:
-                    p = type('Prospect', (), {})()
-                    p.id = row[0]
-                    p.domain = row[1]
-                    p.page_url = row[2]
-                    p.page_title = row[3]
-                    p.contact_email = row[4]
-                    p.contact_method = row[5]
-                    p.da_est = row[6]
-                    p.score = row[7]
-                    p.discovery_status = row[8]
-                    p.approval_status = row[9]
-                    p.scrape_status = row[10]
-                    p.verification_status = row[11]
-                    p.draft_status = row[12]
-                    p.send_status = row[13]
-                    p.stage = row[14]
-                    p.outreach_status = row[15]
-                    p.last_sent = row[16]
-                    p.followups_sent = row[17]
-                    p.draft_subject = row[18]
-                    p.draft_body = row[19]
-                    p.thread_id = row[20]
-                    p.sequence_index = row[21]
-                    p.is_manual = row[22]
-                    p.serp_intent = row[23]
-                    p.serp_confidence = row[24]
-                    p.serp_signals = row[25]
-                    p.discovery_query_id = row[26]
-                    p.discovery_category = row[27]
-                    p.discovery_location = row[28]
-                    p.discovery_keywords = row[29]
-                    p.scrape_payload = row[30]
-                    p.scrape_source_url = row[31]
-                    p.verification_confidence = row[32]
-                    p.verification_payload = row[33]
-                    p.dataforseo_payload = row[34]
-                    p.snov_payload = row[35]
-                    p.created_at = row[36]
-                    p.updated_at = row[37]
-                    websites.append(p)
-                logger.info(f"🔍 [WEBSITES] Found {len(websites)} websites using raw SQL workaround")
-            else:
-                # Column exists - use normal ORM query
-                result = await db.execute(
-                    select(Prospect).where(
-                        Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
-                    )
-                    .order_by(Prospect.created_at.desc())
-                    .offset(skip)
-                    .limit(limit)
+            result = await db.execute(
+                select(Prospect).where(
+                    Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
                 )
-                websites = result.scalars().all()
-                logger.info(f"🔍 [WEBSITES] Found {len(websites)} websites from database query")
+                .order_by(Prospect.created_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
+            websites = result.scalars().all()
+            logger.info(f"🔍 [WEBSITES] Found {len(websites)} websites from database query")
         except Exception as query_err:
-            error_msg = str(query_err).lower()
+            # CRITICAL: Do NOT return empty array - raise error instead
             logger.error(f"❌ [WEBSITES] Query failed: {query_err}", exc_info=True)
             await db.rollback()
-            # Return empty result instead of 500 error
-            return {
-                "data": [],
-                "total": 0,
-                "skip": skip,
-                "limit": limit
-            }
-        
-        total_result = await db.execute(
-            select(func.count(Prospect.id)).where(
-                Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database query failed: {str(query_err)}. This indicates a schema mismatch - check logs."
             )
+    
+    total_result = await db.execute(
+        select(func.count(Prospect.id)).where(
+            Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
         )
-        total = total_result.scalar() or 0
+    )
+    total = total_result.scalar() or 0
         logger.info(f"🔍 [WEBSITES] Total prospects with discovery_status = 'DISCOVERED': {total}")
         
         # Safely build response data with error handling
@@ -1198,12 +1119,12 @@ async def get_websites(
                     "domain": p.domain or "",
                     "url": p.page_url or (f"https://{p.domain}" if p.domain else ""),
                     "title": p.page_title or p.domain or "",
-                    "category": p.discovery_category or "Unknown",
-                    "location": p.discovery_location or "Unknown",
-                    "discovery_job_id": str(p.discovery_query_id) if p.discovery_query_id else None,
-                    "discovered_at": p.created_at.isoformat() if p.created_at else None,
-                    "scrape_status": p.scrape_status or "DISCOVERED",
-                    "approval_status": p.approval_status or "PENDING",
+            "category": p.discovery_category or "Unknown",
+            "location": p.discovery_location or "Unknown",
+            "discovery_job_id": str(p.discovery_query_id) if p.discovery_query_id else None,
+            "discovered_at": p.created_at.isoformat() if p.created_at else None,
+            "scrape_status": p.scrape_status or "DISCOVERED",
+            "approval_status": p.approval_status or "PENDING",
                 })
             except Exception as e:
                 logger.error(f"❌ Error processing website {getattr(p, 'id', 'unknown')}: {e}", exc_info=True)
@@ -1216,10 +1137,10 @@ async def get_websites(
         # Ensure we always return a valid response structure
         response = {
             "data": data,
-            "total": total,
-            "skip": skip,
-            "limit": limit
-        }
+        "total": total,
+        "skip": skip,
+        "limit": limit
+    }
         
         # Log first few items for debugging
         if len(data) > 0:
@@ -1233,7 +1154,7 @@ async def get_websites(
         except Exception as rollback_err:
             logger.error(f"❌ Error during rollback: {rollback_err}", exc_info=True)
         # Return empty result instead of 500 error
-        return {
+    return {
             "data": [],
             "total": 0,
             "skip": skip,
@@ -1298,5 +1219,5 @@ async def debug_counts(
             "with_domain": 0,
             "with_email": 0,
             "with_both": 0
-        }
+    }
 

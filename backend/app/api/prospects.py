@@ -693,99 +693,20 @@ async def list_leads(
         logger.info(f"🔍 [LEADS] Total prospects with emails: {total}")
         
         # Get paginated results
-        # Use raw SQL workaround if final_body column doesn't exist
+        # NO WORKAROUNDS - Schema validation ensures columns exist
         try:
-            # First check if final_body column exists
-            from sqlalchemy import text
-            column_check = await db.execute(text("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'prospects' 
-                AND column_name = 'final_body'
-            """))
-            has_final_body = column_check.fetchone() is not None
-            
-            if not has_final_body:
-                # Use raw SQL to select all columns except final_body
-                logger.info("🔧 [LEADS] final_body column missing - using raw SQL workaround")
-                raw_query = text(f"""
-                    SELECT id, domain, page_url, page_title, contact_email, contact_method,
-                           da_est, score, discovery_status, approval_status, scrape_status,
-                           verification_status, draft_status, send_status, stage,
-                           outreach_status, last_sent, followups_sent, draft_subject, draft_body,
-                           thread_id, sequence_index, is_manual, serp_intent, serp_confidence,
-                           serp_signals, discovery_query_id, discovery_category, discovery_location,
-                           discovery_keywords, scrape_payload, scrape_source_url,
-                           verification_confidence, verification_payload, dataforseo_payload,
-                           snov_payload, created_at, updated_at
-                    FROM prospects
-                    WHERE scrape_status IN ('SCRAPED', 'ENRICHED')
-                    ORDER BY created_at DESC
-                    LIMIT :limit OFFSET :offset
-                """)
-                result = await db.execute(raw_query, {"limit": limit, "offset": skip})
-                rows = result.fetchall()
-                # Convert rows to Prospect-like dicts
-                prospects = []
-                for row in rows:
-                    # Create a simple object with the row data
-                    p = type('Prospect', (), {})()
-                    p.id = row[0]
-                    p.domain = row[1]
-                    p.page_url = row[2]
-                    p.page_title = row[3]
-                    p.contact_email = row[4]
-                    p.contact_method = row[5]
-                    p.da_est = row[6]
-                    p.score = row[7]
-                    p.discovery_status = row[8]
-                    p.approval_status = row[9]
-                    p.scrape_status = row[10]
-                    p.verification_status = row[11]
-                    p.draft_status = row[12]
-                    p.send_status = row[13]
-                    p.stage = row[14]
-                    p.outreach_status = row[15]
-                    p.last_sent = row[16]
-                    p.followups_sent = row[17]
-                    p.draft_subject = row[18]
-                    p.draft_body = row[19]
-                    p.thread_id = row[20]
-                    p.sequence_index = row[21]
-                    p.is_manual = row[22]
-                    p.serp_intent = row[23]
-                    p.serp_confidence = row[24]
-                    p.serp_signals = row[25]
-                    p.discovery_query_id = row[26]
-                    p.discovery_category = row[27]
-                    p.discovery_location = row[28]
-                    p.discovery_keywords = row[29]
-                    p.scrape_payload = row[30]
-                    p.scrape_source_url = row[31]
-                    p.verification_confidence = row[32]
-                    p.verification_payload = row[33]
-                    p.dataforseo_payload = row[34]
-                    p.snov_payload = row[35]
-                    p.created_at = row[36]
-                    p.updated_at = row[37]
-                    prospects.append(p)
-                logger.info(f"🔍 [LEADS] Found {len(prospects)} prospects using raw SQL workaround")
-            else:
-                # Column exists - use normal ORM query
-                result = await db.execute(query.offset(skip).limit(limit))
-                prospects = result.scalars().all()
-                logger.info(f"🔍 [LEADS] Found {len(prospects)} prospects from database query")
+            result = await db.execute(query.offset(skip).limit(limit))
+            prospects = result.scalars().all()
+            logger.info(f"🔍 [LEADS] Found {len(prospects)} prospects from database query")
         except Exception as query_err:
-            error_msg = str(query_err).lower()
+            # CRITICAL: Do NOT return empty array - raise error instead
             logger.error(f"❌ [LEADS] Query failed: {query_err}", exc_info=True)
             await db.rollback()
-            # Return empty result instead of 500 error
-            return {
-                "data": [],
-                "total": total,  # Keep the count we got earlier
-                "skip": skip,
-                "limit": limit
-            }
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database query failed: {str(query_err)}. This indicates a schema mismatch - check logs."
+            )
         
         # Safely convert prospects to response, handling NULL draft fields and missing columns
         prospect_responses = []
@@ -901,26 +822,21 @@ async def list_leads(
         
         return response
         
+    except HTTPException:
+        # Re-raise HTTP exceptions (already handled)
+        raise
     except Exception as e:
-        error_msg = str(e).lower()
-        logger.error(f"❌ Error listing leads: {e}", exc_info=True)
-        
-        # Check if error is due to missing final_body column
-        if 'final_body' in error_msg or ('column' in error_msg and 'does not exist' in error_msg):
-            logger.error(f"❌ [LEADS] Query failed due to missing final_body column")
-            logger.error(f"❌ [LEADS] Migration needs to run. Use: python backend/apply_migration_now.py")
-        
+        # CRITICAL: Do NOT return empty array - raise error instead
+        logger.error(f"❌ [LEADS] Unexpected error: {e}", exc_info=True)
         try:
             await db.rollback()  # Rollback on exception to prevent transaction poisoning
         except Exception as rollback_err:
             logger.error(f"❌ Error during rollback: {rollback_err}", exc_info=True)
-        # Return empty result instead of 500 error
-        return {
-            "data": [],
-            "total": 0,
-            "skip": skip,
-            "limit": limit
-        }
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}. Check logs for details."
+        )
 
 
 @router.get("/scraped-emails")

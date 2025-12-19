@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { listProspects, composeEmail, sendEmail, type Prospect } from '@/lib/api'
-import { Mail, Send, Edit, Filter } from 'lucide-react'
+import { listProspects, composeEmail, type Prospect } from '@/lib/api'
+import { Mail, Edit, Filter } from 'lucide-react'
 import { safeToFixed } from '@/lib/safe-utils'
 
 export default function ProspectTable() {
@@ -14,7 +14,6 @@ export default function ProspectTable() {
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [hasEmailFilter, setHasEmailFilter] = useState<string>('')
   const [composing, setComposing] = useState<string | null>(null)
-  const [sending, setSending] = useState<string | null>(null)
 
   const loadProspects = async () => {
     setLoading(true)
@@ -59,19 +58,9 @@ export default function ProspectTable() {
     }
   }
 
-  const handleSend = async (prospectId: string) => {
-    if (!confirm('Send email to this prospect?')) return
-    setSending(prospectId)
-    try {
-      await sendEmail(prospectId)
-      await loadProspects()
-      alert('Email sent successfully!')
-    } catch (error: any) {
-      alert(`Failed to send email: ${error.message}`)
-    } finally {
-      setSending(null)
-    }
-  }
+  // REMOVED: handleSend function
+  // Individual send endpoint is disabled (410 Gone).
+  // Sending must happen via Pipeline Send card.
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -166,15 +155,13 @@ export default function ProspectTable() {
                           <Mail className="w-4 h-4" />
                         </button>
                       )}
-                      {prospect.draft_subject && prospect.contact_email && (
-                        <button
-                          onClick={() => handleSend(prospect.id)}
-                          disabled={sending === prospect.id}
-                          className="p-1 text-green-600 hover:text-green-800 disabled:opacity-50"
-                          title="Send email"
+                      {prospect.draft_subject && (
+                        <span
+                          className="p-1 text-gray-400"
+                          title="Draft exists - send via Pipeline Send card"
                         >
-                          <Send className="w-4 h-4" />
-                        </button>
+                          <Edit className="w-4 h-4" />
+                        </span>
                       )}
                     </div>
                   </td>

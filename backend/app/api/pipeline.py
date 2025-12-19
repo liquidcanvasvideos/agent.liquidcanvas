@@ -888,10 +888,10 @@ async def get_pipeline_status(
                 )
                 email_found_count = email_found_fallback.scalar() or 0
                 leads_count = 0  # No leads without stage column
-    except Exception as e:
-        logger.error(f"❌ Error counting stage-based prospects: {e}", exc_info=True)
-        # Fallback to scrape_status + email if stage query fails
-        try:
+        except Exception as e:
+            logger.error(f"❌ Error counting stage-based prospects: {e}", exc_info=True)
+            # Fallback to scrape_status + email if stage query fails
+            try:
             email_found_fallback = await db.execute(
                 select(func.count(Prospect.id)).where(
                     Prospect.scrape_status.in_([ScrapeStatus.SCRAPED.value, ScrapeStatus.ENRICHED.value]),

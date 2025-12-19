@@ -17,7 +17,10 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision = 'add_final_body_thread_id'
-down_revision = 'add_draft_followup_fields'  # Parent migration that should have run
+# NOTE: There are two migrations with down_revision='add_draft_followup_fields'
+# This one and fix_missing_prospect_columns. This creates a branch.
+# We'll make this one depend on fix_missing_prospect_columns instead.
+down_revision = 'fix_missing_prospect_columns'  # Chain after the comprehensive fix
 branch_labels = None
 depends_on = None
 

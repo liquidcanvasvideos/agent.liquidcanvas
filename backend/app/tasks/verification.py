@@ -123,11 +123,24 @@ async def verify_prospects_async(job_id: str):
             
             for idx, prospect in enumerate(prospects, 1):
                 try:
-                    logger.info(f"🔍 [VERIFICATION] [{idx}/{len(prospects)}] Verifying {prospect.domain} (email: {prospect.contact_email}, scrape_status: {prospect.scrape_status})...")
+                    logger.info(f"🔍 [VERIFICATION] [{idx}/{len(prospects)}] Verifying {prospect.domain} (email: {prospect.contact_email}, scrape_status: {prospect.scrape_status}, verification_status: {prospect.verification_status})...")
                     
                     # If prospect has scraped email, verify it
                     # CRITICAL: Process both SCRAPED and ENRICHED prospects (matches verify endpoint logic)
-                    if prospect.contact_email and prospect.scrape_status in [ScrapeStatus.SCRAPED.value, ScrapeStatus.ENRICHED.value]:
+                    # Also handle any prospect with an email, regardless of scrape_status (defensive)
+                    if prospect.contact_email:
+                        # Check if already verified (shouldn't happen due to query filter, but defensive)
+                        if prospect.verification_status == VerificationStatus.VERIFIED.value:
+                            logger.info(f"⏭️  [VERIFICATION] Prospect {prospect.id} already verified, skipping")
+                            continue
+                        
+                        # Process if scraped or enriched, or if we have an email (defensive)
+                        should_verify = prospect.scrape_status in [ScrapeStatus.SCRAPED.value, ScrapeStatus.ENRICHED.value]
+                        if not should_verify:
+                            logger.warning(f"⚠️  [VERIFICATION] Prospect {prospect.id} has email but scrape_status is '{prospect.scrape_status}' (not SCRAPED/ENRICHED). Verifying anyway since email exists.")
+                            should_verify = True
+                        
+                        if should_verify:
                         # Verify existing scraped email
                         logger.debug(f"🔍 [VERIFICATION] Calling Snov.io domain_search for {prospect.domain}...")
                         snov_result = await snov_client.domain_search(prospect.domain)

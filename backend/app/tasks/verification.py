@@ -107,6 +107,30 @@ async def verify_prospects_async(job_id: str):
             
             logger.info(f"✅ [VERIFICATION] Starting verification for {len(prospects)} prospects (not yet verified)")
             
+            if len(prospects) == 0:
+                logger.warning(f"⚠️  [VERIFICATION] No prospects found to verify! Job params: {job.params}")
+                logger.warning(f"⚠️  [VERIFICATION] This might mean:")
+                logger.warning(f"⚠️  - All prospects are already verified")
+                logger.warning(f"⚠️  - Prospects don't have emails")
+                logger.warning(f"⚠️  - Prospects don't have correct scrape_status")
+                job.status = "completed"
+                job.result = {
+                    "verified": 0,
+                    "unverified": 0,
+                    "failed": 0,
+                    "total": 0,
+                    "message": "No prospects found to verify"
+                }
+                await db.commit()
+                return {
+                    "job_id": job_id,
+                    "status": "completed",
+                    "verified": 0,
+                    "unverified": 0,
+                    "failed": 0,
+                    "message": "No prospects found to verify"
+                }
+            
             # Initialize Snov client
             try:
                 snov_client = SnovIOClient()

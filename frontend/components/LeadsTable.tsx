@@ -21,7 +21,7 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
   const [draftBody, setDraftBody] = useState('')
   const [isComposing, setIsComposing] = useState(false)
   const [isSending, setIsSending] = useState(false)
-  const [isSending, setIsSending] = useState(false)
+  const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit')
 
   // Manual actions state
   const [showManualActions, setShowManualActions] = useState(false)

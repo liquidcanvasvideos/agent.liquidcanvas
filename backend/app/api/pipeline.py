@@ -666,9 +666,9 @@ async def send_emails(
             )
         )
         prospects = result.scalars().all()
-    
-    if len(prospects) != len(request.prospect_ids):
-        raise HTTPException(
+        
+        if len(prospects) != len(request.prospect_ids):
+            raise HTTPException(
                 status_code=422,
                 detail=f"Some prospects not found or not ready for sending. Found {len(prospects)} ready out of {len(request.prospect_ids)} requested. Ensure they have verified email, draft subject, and draft body."
             )
@@ -689,7 +689,7 @@ async def send_emails(
             raise HTTPException(
                 status_code=422,
                 detail="No prospects ready for sending. Ensure prospects have verified email, draft subject, and draft body."
-        )
+            )
     
     logger.info(f"📧 [PIPELINE STEP 7] Sending emails for {len(prospects)} send-ready prospects (data-driven)")
     

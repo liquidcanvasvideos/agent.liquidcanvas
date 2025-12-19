@@ -1121,13 +1121,21 @@ async def get_websites(
                 continue
         
         logger.info(f"✅ [WEBSITES] Returning {len(data)} websites (total: {total})")
+        logger.info(f"📊 [WEBSITES] Response structure: data length={len(data)}, total={total}, skip={skip}, limit={limit}")
         
-        return {
+        # Ensure we always return a valid response structure
+        response = {
             "data": data,
             "total": total,
             "skip": skip,
             "limit": limit
         }
+        
+        # Log first few items for debugging
+        if len(data) > 0:
+            logger.info(f"📊 [WEBSITES] First website sample: {data[0] if data else 'N/A'}")
+        
+        return response
     except Exception as e:
         logger.error(f"❌ Error in get_websites endpoint: {e}", exc_info=True)
         try:

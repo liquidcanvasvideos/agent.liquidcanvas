@@ -740,13 +740,37 @@ async def list_leads(
                     continue
         
         logger.info(f"✅ [LEADS] Returning {len(prospect_responses)} leads (total: {total})")
+        logger.info(f"📊 [LEADS] Response structure: data length={len(prospect_responses)}, total={total}, skip={skip}, limit={limit}")
         
-        return {
-            "data": [p.dict() for p in prospect_responses],
+        # Convert to dicts safely
+        data_dicts = []
+        for p in prospect_responses:
+            try:
+                if hasattr(p, 'dict'):
+                    data_dicts.append(p.dict())
+                elif hasattr(p, 'model_dump'):
+                    data_dicts.append(p.model_dump())
+                else:
+                    # Already a dict
+                    data_dicts.append(p)
+            except Exception as e:
+                logger.error(f"❌ Error converting prospect response to dict: {e}")
+                continue
+        
+        # Log first few items for debugging
+        if len(data_dicts) > 0:
+            logger.info(f"📊 [LEADS] First lead sample: {data_dicts[0] if data_dicts else 'N/A'}")
+        
+        response = {
+            "data": data_dicts,
             "total": total,
             "skip": skip,
             "limit": limit
         }
+        
+        logger.info(f"📊 [LEADS] Final response: {len(data_dicts)} items in data array")
+        
+        return response
         
     except Exception as e:
         logger.error(f"❌ Error listing leads: {e}", exc_info=True)
@@ -814,12 +838,52 @@ async def list_scraped_emails(
         
         # Safely convert prospects to response
         prospect_responses = []
+        conversion_errors = 0
         for p in prospects:
             try:
                 prospect_responses.append(ProspectResponse.model_validate(p))
             except Exception as e:
-                logger.warning(f"⚠️  Error converting prospect {getattr(p, 'id', 'unknown')} to response: {e}")
-                continue
+                conversion_errors += 1
+                error_msg = str(e).lower()
+                logger.warning(f"⚠️  Error converting prospect {getattr(p, 'id', 'unknown')}: {error_msg[:200]}")
+                
+                # Try fallback conversion
+                try:
+                    response_dict = {
+                        "id": str(p.id) if p.id else "",
+                        "domain": p.domain or "",
+                        "page_url": getattr(p, 'page_url', None),
+                        "page_title": getattr(p, 'page_title', None),
+                        "contact_email": getattr(p, 'contact_email', None),
+                        "contact_method": getattr(p, 'contact_method', None),
+                        "da_est": getattr(p, 'da_est', None),
+                        "score": getattr(p, 'score', None),
+                        "outreach_status": getattr(p, 'outreach_status', 'pending'),
+                        "last_sent": getattr(p, 'last_sent', None).isoformat() if getattr(p, 'last_sent', None) else None,
+                        "followups_sent": getattr(p, 'followups_sent', 0) or 0,
+                        "draft_subject": getattr(p, 'draft_subject', None),
+                        "draft_body": getattr(p, 'draft_body', None),
+                        "final_body": None,
+                        "thread_id": getattr(p, 'thread_id', None),
+                        "sequence_index": getattr(p, 'sequence_index', None) or 0,
+                        "is_manual": getattr(p, 'is_manual', None) or False,
+                        "discovery_status": getattr(p, 'discovery_status', None),
+                        "approval_status": getattr(p, 'approval_status', None),
+                        "scrape_status": getattr(p, 'scrape_status', None),
+                        "verification_status": getattr(p, 'verification_status', None),
+                        "draft_status": getattr(p, 'draft_status', None),
+                        "send_status": getattr(p, 'send_status', None),
+                        "stage": getattr(p, 'stage', None),
+                        "created_at": getattr(p, 'created_at', None).isoformat() if getattr(p, 'created_at', None) else None,
+                        "updated_at": getattr(p, 'updated_at', None).isoformat() if getattr(p, 'updated_at', None) else None,
+                    }
+                    prospect_responses.append(ProspectResponse(**response_dict))
+                except Exception as fallback_err:
+                    logger.error(f"❌ Fallback conversion also failed: {fallback_err}")
+                    continue
+        
+        if conversion_errors > 0:
+            logger.warning(f"⚠️  [SCRAPED EMAILS] Had {conversion_errors} conversion errors, but {len(prospect_responses)} prospects converted successfully")
         
         logger.info(f"✅ [SCRAPED EMAILS] Returning {len(prospect_responses)} scraped emails (total: {total})")
         

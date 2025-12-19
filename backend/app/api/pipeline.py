@@ -102,9 +102,13 @@ async def discover_websites(
         logger.info(f"✅ [PIPELINE STEP 1] Discovery job {job.id} started")
     except Exception as e:
         logger.error(f"❌ [PIPELINE STEP 1] Failed to start discovery job: {e}", exc_info=True)
-        job.status = "failed"
-        job.error_message = str(e)
-        await db.commit()
+        try:
+            await db.rollback()  # Rollback on exception to prevent transaction poisoning
+            job.status = "failed"
+            job.error_message = str(e)
+            await db.commit()
+        except Exception as rollback_err:
+            logger.error(f"❌ [PIPELINE STEP 1] Error during rollback: {rollback_err}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to start discovery job: {str(e)}")
     
     return DiscoveryResponse(
@@ -287,8 +291,13 @@ async def scrape_websites(
     if request.prospect_ids:
         query = query.where(Prospect.id.in_(request.prospect_ids))
     
-    result = await db.execute(query)
-    prospects = result.scalars().all()
+    try:
+        result = await db.execute(query)
+        prospects = result.scalars().all()
+    except Exception as query_err:
+        logger.error(f"❌ [PIPELINE STEP 3] Query error: {query_err}", exc_info=True)
+        await db.rollback()  # Rollback on query failure
+        raise HTTPException(status_code=500, detail=f"Database query failed: {str(query_err)}")
     
     if len(prospects) == 0:
         raise HTTPException(
@@ -308,9 +317,14 @@ async def scrape_websites(
         status="pending"
     )
     
-    db.add(job)
-    await db.commit()
-    await db.refresh(job)
+    try:
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+    except Exception as commit_err:
+        logger.error(f"❌ [PIPELINE STEP 3] Commit error: {commit_err}", exc_info=True)
+        await db.rollback()  # Rollback on commit failure
+        raise HTTPException(status_code=500, detail=f"Failed to create scraping job: {str(commit_err)}")
     
     # Start scraping task in background
     try:
@@ -323,9 +337,13 @@ async def scrape_websites(
         logger.info(f"✅ [PIPELINE STEP 3] Scraping job {job.id} started")
     except Exception as e:
         logger.error(f"❌ [PIPELINE STEP 3] Failed to start scraping job: {e}", exc_info=True)
-        job.status = "failed"
-        job.error_message = str(e)
-        await db.commit()
+        try:
+            await db.rollback()  # Rollback on exception
+            job.status = "failed"
+            job.error_message = str(e)
+            await db.commit()
+        except Exception as rollback_err:
+            logger.error(f"❌ [PIPELINE STEP 3] Error during rollback: {rollback_err}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to start scraping job: {str(e)}")
     
     return ScrapeResponse(
@@ -367,66 +385,10 @@ async def verify_emails(
     - Sets verification_status = "verified" or "unverified"
     - Never overwrites scraped emails without confirmation
     """
-    # Get LEAD prospects ready for verification (canonical stage-based query)
-    # LEAD stage = scraped prospects with emails, ready to be verified
-    # Defensive: Check if stage column exists, fallback to scrape_status + email
+    # Get prospects ready for verification
+    # REMOVED: Hard stage filtering (stage = LEAD)
+    # Use status flags instead: scraped + email + pending verification
     try:
-        # Check if stage column exists
-        column_check = await db.execute(
-            text("""
-                SELECT column_name
-                FROM information_schema.columns 
-                WHERE table_name = 'prospects' 
-                AND column_name = 'stage'
-            """)
-        )
-        column_exists = column_check.fetchone() is not None
-        if column_exists:
-            # Column exists - use raw SQL to build query safely (avoid ORM attribute access)
-            # Build WHERE clause conditions
-            where_clause = "stage = :stage_value AND verification_status = :verification_status"
-            params = {
-                "stage_value": ProspectStage.LEAD.value,
-                "verification_status": VerificationStatus.PENDING.value
-            }
-            
-            # If prospect_ids specified, add to WHERE clause
-            if request.prospect_ids:
-                where_clause += " AND id = ANY(:prospect_ids)"
-                params["prospect_ids"] = [str(pid) for pid in request.prospect_ids]
-            
-            # Use raw SQL to fetch prospect IDs, then load as ORM objects
-            raw_query = text(f"""
-                SELECT id FROM prospects 
-                WHERE {where_clause}
-            """)
-            result = await db.execute(raw_query, params)
-            rows = result.fetchall()
-            
-            # Convert rows to Prospect objects by ID (safe - doesn't use stage attribute)
-            prospects = []
-            for row in rows:
-                # Extract ID from row (SQLAlchemy Row object)
-                prospect_id = row.id if hasattr(row, 'id') else row[0]
-                prospect = await db.get(Prospect, prospect_id)
-                if prospect:
-                    prospects.append(prospect)
-        else:
-            # Column doesn't exist yet - fallback to scrape_status + email
-            logger.warning("⚠️  stage column not found, using fallback logic for verification")
-            query = select(Prospect).where(
-                Prospect.scrape_status.in_([ScrapeStatus.SCRAPED.value, ScrapeStatus.ENRICHED.value]),
-                Prospect.contact_email.isnot(None),
-                Prospect.verification_status == VerificationStatus.PENDING.value,
-            )
-            if request.prospect_ids:
-                query = query.where(Prospect.id.in_(request.prospect_ids))
-            
-            result = await db.execute(query)
-            prospects = result.scalars().all()
-    except Exception as e:
-        logger.error(f"❌ Error checking stage column: {e}, using fallback", exc_info=True)
-        # Fallback to scrape_status + email if stage check fails
         query = select(Prospect).where(
             Prospect.scrape_status.in_([ScrapeStatus.SCRAPED.value, ScrapeStatus.ENRICHED.value]),
             Prospect.contact_email.isnot(None),
@@ -437,14 +399,18 @@ async def verify_emails(
         
         result = await db.execute(query)
         prospects = result.scalars().all()
+    except Exception as e:
+        logger.error(f"❌ [PIPELINE STEP 4] Query error: {e}", exc_info=True)
+        await db.rollback()  # Rollback on query failure
+        raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
     
     if len(prospects) == 0:
         raise HTTPException(
             status_code=400,
-            detail="No leads found ready for verification. Ensure prospects are scraped and have emails (stage=LEAD) in Step 3."
+            detail="No scraped prospects with emails found ready for verification. Ensure prospects are scraped and have emails in Step 3."
         )
     
-    logger.info(f"✅ [PIPELINE STEP 4] Verifying {len(prospects)} leads (stage=LEAD)")
+    logger.info(f"✅ [PIPELINE STEP 4] Verifying {len(prospects)} scraped prospects with emails")
     
     # Create verification job
     job = Job(
@@ -456,9 +422,14 @@ async def verify_emails(
         status="pending"
     )
     
-    db.add(job)
-    await db.commit()
-    await db.refresh(job)
+    try:
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+    except Exception as commit_err:
+        logger.error(f"❌ [PIPELINE STEP 4] Commit error: {commit_err}", exc_info=True)
+        await db.rollback()  # Rollback on commit failure
+        raise HTTPException(status_code=500, detail=f"Failed to create verification job: {str(commit_err)}")
     
     # Start verification task in background
     try:
@@ -471,9 +442,13 @@ async def verify_emails(
         logger.info(f"✅ [PIPELINE STEP 4] Verification job {job.id} started")
     except Exception as e:
         logger.error(f"❌ [PIPELINE STEP 4] Failed to start verification job: {e}", exc_info=True)
-        job.status = "failed"
-        job.error_message = str(e)
-        await db.commit()
+        try:
+            await db.rollback()  # Rollback on exception
+            job.status = "failed"
+            job.error_message = str(e)
+            await db.commit()
+        except Exception as rollback_err:
+            logger.error(f"❌ [PIPELINE STEP 4] Error during rollback: {rollback_err}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to start verification job: {str(e)}")
     
     return VerifyResponse(

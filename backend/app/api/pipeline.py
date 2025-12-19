@@ -977,18 +977,19 @@ async def get_pipeline_status(
             sent_count = 0
         
         # SEND READY = verified + drafted + not sent
-        # Use draft_subject as indicator (drafted_at column doesn't exist)
+        # SINGLE SOURCE OF TRUTH: verification_status = "verified" AND draft_status = "drafted" AND send_status != "sent"
         send_ready_count = 0
         try:
             send_ready = await db.execute(
                 select(func.count(Prospect.id)).where(
                     Prospect.contact_email.isnot(None),
                     Prospect.verification_status == VerificationStatus.VERIFIED.value,
-                    Prospect.draft_subject.isnot(None),
-                    Prospect.last_sent.is_(None)  # Not yet sent
+                    Prospect.draft_status == DraftStatus.DRAFTED.value,
+                    Prospect.send_status != SendStatus.SENT.value
                 )
             )
             send_ready_count = send_ready.scalar() or 0
+            logger.info(f"📊 [PIPELINE STATUS] SEND-READY count: {send_ready_count} (verified + drafted + not sent)")
         except Exception as e:
             logger.error(f"❌ Error counting send-ready prospects: {e}", exc_info=True)
             send_ready_count = 0

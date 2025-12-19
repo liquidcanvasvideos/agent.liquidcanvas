@@ -933,7 +933,7 @@ async def get_pipeline_status(
         emails_verified_count = emails_verified.scalar() or 0
         
         # Step 5: DRAFT-READY = Prospects where verification_status == "verified" AND email IS NOT NULL
-        # USER RULE: Draft-ready count = Prospects where verification_status == "verified" AND email IS NOT NULL
+        # SINGLE SOURCE OF TRUTH: verification_status = "verified" AND contact_email IS NOT NULL
         draft_ready = await db.execute(
             select(func.count(Prospect.id)).where(
                 Prospect.verification_status == VerificationStatus.VERIFIED.value,
@@ -941,6 +941,7 @@ async def get_pipeline_status(
             )
         )
         draft_ready_count = draft_ready.scalar() or 0
+        logger.info(f"📊 [PIPELINE STATUS] DRAFT-READY count: {draft_ready_count} (verification_status = 'verified' AND contact_email IS NOT NULL)")
         
         # Backwards compatibility alias
         drafting_ready = draft_ready_count

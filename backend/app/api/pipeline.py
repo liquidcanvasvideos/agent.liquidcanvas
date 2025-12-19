@@ -546,6 +546,8 @@ async def draft_emails(
     """
     # DATA-DRIVEN: Query draft-ready prospects directly from database
     # Draft-ready = verified + email + not drafted
+    prospects = []  # Initialize prospects list
+    
     if request.prospect_ids is not None and len(request.prospect_ids) > 0:
         # Manual selection: use provided prospect_ids but validate they meet draft-ready criteria
         result = await db.execute(
@@ -557,9 +559,9 @@ async def draft_emails(
             )
         )
         prospects = result.scalars().all()
-    
-    if len(prospects) != len(request.prospect_ids):
-        raise HTTPException(
+        
+        if len(prospects) != len(request.prospect_ids):
+            raise HTTPException(
                 status_code=422,
                 detail=f"Some prospects not found or not ready for drafting. Found {len(prospects)} ready out of {len(request.prospect_ids)} requested. Ensure they are verified, have emails, and draft_status is 'pending'."
             )
@@ -578,7 +580,7 @@ async def draft_emails(
             raise HTTPException(
                 status_code=422,
                 detail="No prospects ready for drafting. Ensure prospects have verified email and draft_status is 'pending'."
-        )
+            )
     
     logger.info(f"✍️  [PIPELINE STEP 6] Drafting emails for {len(prospects)} verified prospects")
     

@@ -717,6 +717,10 @@ async def list_leads(
         
     except Exception as e:
         logger.error(f"❌ Error listing leads: {e}", exc_info=True)
+        try:
+            await db.rollback()  # Rollback on exception to prevent transaction poisoning
+        except Exception as rollback_err:
+            logger.error(f"❌ Error during rollback: {rollback_err}", exc_info=True)
         # Return empty result instead of 500 error
         return {
             "data": [],
@@ -792,6 +796,10 @@ async def list_scraped_emails(
         
     except Exception as e:
         logger.error(f"❌ Error listing scraped emails: {e}", exc_info=True)
+        try:
+            await db.rollback()  # Rollback on exception to prevent transaction poisoning
+        except Exception as rollback_err:
+            logger.error(f"❌ Error during rollback: {rollback_err}", exc_info=True)
         return {
             "data": [],
             "total": 0,

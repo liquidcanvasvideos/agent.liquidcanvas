@@ -32,7 +32,9 @@ if raw_database_url:
             user_pass = parts[0].split(":")
             if len(user_pass) >= 2:
                 safe_url = f"{user_pass[0]}:****@{parts[1]}"
-    logger.info(f"Database URL format: {safe_url[:50]}... (masked)")
+    logger.info(f"📊 DATABASE_URL: {safe_url}")
+else:
+    logger.warning("⚠️  DATABASE_URL environment variable not set!")
 
 # Convert postgresql:// to postgresql+asyncpg:// if needed
 if raw_database_url.startswith("postgresql://"):

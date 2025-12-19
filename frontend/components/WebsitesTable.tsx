@@ -32,10 +32,23 @@ export default function WebsitesTable() {
       setLoading(true)
       setError(null)
       const response = await listWebsites(skip, limit)
-      setWebsites(response.data)
-      setTotal(response.total)
+      console.log('📊 [WEBSITES] API Response:', { 
+        dataLength: response?.data?.length, 
+        total: response?.total,
+        hasData: !!response?.data,
+        isArray: Array.isArray(response?.data)
+      })
+      if (response?.data && Array.isArray(response.data)) {
+        setWebsites(response.data)
+        setTotal(response.total ?? response.data.length)
+        console.log('✅ [WEBSITES] Set websites:', response.data.length)
+      } else {
+        console.warn('⚠️ [WEBSITES] Invalid response structure:', response)
+        setWebsites([])
+        setTotal(0)
+      }
     } catch (error: any) {
-      console.error('Failed to load websites:', error)
+      console.error('❌ [WEBSITES] Failed to load websites:', error)
       setError(error?.message || 'Failed to load websites. Check if backend is running.')
       setWebsites([])
       setTotal(0)

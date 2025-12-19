@@ -659,23 +659,31 @@ async def list_leads(
     current_user: Optional[str] = Depends(get_current_user_optional)
 ):
     """
-    List ALL prospects with emails (cumulative view)
+    List prospects with scraped emails (matches pipeline "Scraped" card count)
     
-    Shows all prospects that have emails, regardless of verification status.
-    This is a HISTORICAL view showing all prospects with emails.
+    SINGLE SOURCE OF TRUTH: Returns prospects where scrape_status IN ("SCRAPED", "ENRICHED")
+    This matches the pipeline status "scraped" count exactly.
     """
     try:
-        # Leads tab - contact_email IS NOT NULL (show ALL prospects with emails)
-        # Removed verification_status filter to show all prospects with emails
-        logger.info(f"🔍 [LEADS] Querying prospects with contact_email IS NOT NULL (skip={skip}, limit={limit})")
+        from app.models.prospect import ScrapeStatus
+        
+        # SINGLE SOURCE OF TRUTH: Match pipeline status query exactly
+        # Pipeline counts: scrape_status IN ("SCRAPED", "ENRICHED")
+        logger.info(f"🔍 [LEADS] Querying prospects with scrape_status IN ('SCRAPED', 'ENRICHED') (skip={skip}, limit={limit})")
         
         query = select(Prospect).where(
-            Prospect.contact_email.isnot(None)
+            Prospect.scrape_status.in_([
+                ScrapeStatus.SCRAPED.value,
+                ScrapeStatus.ENRICHED.value
+            ])
         ).order_by(Prospect.created_at.desc())
         
         # Get total count
         count_query = select(func.count(Prospect.id)).where(
-            Prospect.contact_email.isnot(None)
+            Prospect.scrape_status.in_([
+                ScrapeStatus.SCRAPED.value,
+                ScrapeStatus.ENRICHED.value
+            ])
         )
         
         total_result = await db.execute(count_query)

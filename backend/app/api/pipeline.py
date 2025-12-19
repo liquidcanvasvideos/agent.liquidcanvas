@@ -1071,18 +1071,19 @@ async def get_websites(
     current_user: Optional[str] = Depends(get_current_user_optional)
 ):
     """
-    Get ALL websites (historical view)
+    Get discovered websites (matches pipeline "Discovered" card count)
     
-    Returns ALL prospects that have a domain/website, regardless of stage.
-    This is a HISTORICAL view, not stage-locked.
-    Includes discovered, scraped, verified, and manual websites.
+    SINGLE SOURCE OF TRUTH: Returns prospects where discovery_status = "DISCOVERED"
+    This matches the pipeline status "discovered" count exactly.
     """
     try:
-        logger.info(f"🔍 [WEBSITES] Querying prospects with domain IS NOT NULL (skip={skip}, limit={limit})")
+        # SINGLE SOURCE OF TRUTH: Match pipeline status query exactly
+        # Pipeline counts: discovery_status = "DISCOVERED"
+        logger.info(f"🔍 [WEBSITES] Querying prospects with discovery_status = 'DISCOVERED' (skip={skip}, limit={limit})")
         
         result = await db.execute(
             select(Prospect).where(
-                Prospect.domain.isnot(None)  # Show ALL prospects with domain, regardless of stage
+                Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
             )
             .order_by(Prospect.created_at.desc())
             .offset(skip)
@@ -1093,11 +1094,11 @@ async def get_websites(
         
         total_result = await db.execute(
             select(func.count(Prospect.id)).where(
-                Prospect.domain.isnot(None)  # Count ALL prospects with domain
+                Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
             )
         )
         total = total_result.scalar() or 0
-        logger.info(f"🔍 [WEBSITES] Total prospects with domain: {total}")
+        logger.info(f"🔍 [WEBSITES] Total prospects with discovery_status = 'DISCOVERED': {total}")
         
         # Safely build response data with error handling
         data = []

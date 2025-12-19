@@ -37,18 +37,32 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
       setLoading(true)
       setError(null)
       // Use different endpoints based on emailsOnly prop
-      // Leads tab: all prospects with emails
-      // Scraped Emails tab: prospects with emails AND scraping_status IN (SCRAPED, ENRICHED, VERIFIED)
+      // Leads tab: prospects with scrape_status IN (SCRAPED, ENRICHED) - matches pipeline "Scraped" count
+      // Scraped Emails tab: same as leads (for now, both show scraped emails)
       const response = emailsOnly 
         ? await listScrapedEmails(skip, limit)
         : await listLeads(skip, limit)
+      
+      console.log(`📊 [${emailsOnly ? 'SCRAPED EMAILS' : 'LEADS'}] API Response:`, { 
+        dataLength: response?.data?.length, 
+        total: response?.total,
+        hasData: !!response?.data,
+        isArray: Array.isArray(response?.data)
+      })
+      
       const leads = Array.isArray(response?.data) ? response.data : []
+      if (leads.length > 0 || response?.total > 0) {
+        console.log(`✅ [${emailsOnly ? 'SCRAPED EMAILS' : 'LEADS'}] Setting prospects:`, leads.length, 'total:', response?.total)
+      } else {
+        console.warn(`⚠️ [${emailsOnly ? 'SCRAPED EMAILS' : 'LEADS'}] Empty response - data:`, response?.data, 'total:', response?.total)
+      }
+      
       setProspects(leads)
       setTotal(response.total ?? leads.length)
       // Clear error if we successfully got data (even if empty)
       // Empty data is not an error, it's a valid state
     } catch (error: any) {
-      console.error(`Failed to load ${emailsOnly ? 'scraped emails' : 'leads'}:`, error)
+      console.error(`❌ [${emailsOnly ? 'SCRAPED EMAILS' : 'LEADS'}] Failed to load:`, error)
       const errorMessage = error?.message || `Failed to load ${emailsOnly ? 'scraped emails' : 'leads'}. Check if backend is running.`
       setError(errorMessage)
       setProspects([])

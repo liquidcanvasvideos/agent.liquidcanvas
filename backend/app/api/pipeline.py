@@ -836,13 +836,13 @@ async def get_pipeline_status(
         try:
             # Check if stage column exists using raw SQL
             column_check = await db.execute(
-            text("""
-                SELECT column_name
-                FROM information_schema.columns 
-                WHERE table_name = 'prospects' 
-                AND column_name = 'stage'
-            """)
-        )
+                text("""
+                    SELECT column_name
+                    FROM information_schema.columns 
+                    WHERE table_name = 'prospects' 
+                    AND column_name = 'stage'
+                """)
+            )
         if column_check.fetchone():
             # Column exists - use raw SQL to query safely
             # EMAIL_FOUND: prospects with emails found but not yet promoted to LEAD
@@ -952,16 +952,16 @@ async def get_pipeline_status(
         # Defensive: Check if drafted_at column exists before querying
         drafted_count = 0
         try:
-        from sqlalchemy import text
-        column_check = await db.execute(
-            text("""
-                SELECT column_name
-                FROM information_schema.columns 
-                WHERE table_name = 'prospects' 
-                AND column_name = 'drafted_at'
-            """)
-        )
-        if column_check.fetchone():
+            from sqlalchemy import text
+            column_check = await db.execute(
+                text("""
+                    SELECT column_name
+                    FROM information_schema.columns 
+                    WHERE table_name = 'prospects' 
+                    AND column_name = 'drafted_at'
+                """)
+            )
+            if column_check.fetchone():
             # Column exists - use raw SQL to query safely
             drafted_result = await db.execute(
                 text("""
@@ -1015,43 +1015,43 @@ async def get_pipeline_status(
         # Defensive: Use raw SQL to avoid transaction errors
         send_ready_count = 0
         try:
-        # Check if drafted_at column exists
-        column_check = await db.execute(
-            text("""
-                SELECT column_name
-                FROM information_schema.columns 
-                WHERE table_name = 'prospects' 
-                AND column_name = 'drafted_at'
-            """)
-        )
-        has_drafted_at = column_check.fetchone() is not None
-        
-        if has_drafted_at:
-            # Use drafted_at if available
-            send_ready_result = await db.execute(
+            # Check if drafted_at column exists
+            column_check = await db.execute(
                 text("""
-                    SELECT COUNT(*) 
-                    FROM prospects 
-                    WHERE contact_email IS NOT NULL
-                    AND verification_status = :verified_status
-                    AND drafted_at IS NOT NULL
-                    AND last_sent IS NULL
-                """),
-                {"verified_status": VerificationStatus.VERIFIED.value}
+                    SELECT column_name
+                    FROM information_schema.columns 
+                    WHERE table_name = 'prospects' 
+                    AND column_name = 'drafted_at'
+                """)
             )
-        else:
-            # Fallback to draft_subject
-            send_ready_result = await db.execute(
-                text("""
-                    SELECT COUNT(*) 
-                    FROM prospects 
-                    WHERE contact_email IS NOT NULL
-                    AND verification_status = :verified_status
-                    AND draft_subject IS NOT NULL
-                    AND last_sent IS NULL
-                """),
-                {"verified_status": VerificationStatus.VERIFIED.value}
-            )
+            has_drafted_at = column_check.fetchone() is not None
+            
+            if has_drafted_at:
+                # Use drafted_at if available
+                send_ready_result = await db.execute(
+                    text("""
+                        SELECT COUNT(*) 
+                        FROM prospects 
+                        WHERE contact_email IS NOT NULL
+                        AND verification_status = :verified_status
+                        AND drafted_at IS NOT NULL
+                        AND last_sent IS NULL
+                    """),
+                    {"verified_status": VerificationStatus.VERIFIED.value}
+                )
+            else:
+                # Fallback to draft_subject
+                send_ready_result = await db.execute(
+                    text("""
+                        SELECT COUNT(*) 
+                        FROM prospects 
+                        WHERE contact_email IS NOT NULL
+                        AND verification_status = :verified_status
+                        AND draft_subject IS NOT NULL
+                        AND last_sent IS NULL
+                    """),
+                    {"verified_status": VerificationStatus.VERIFIED.value}
+                )
             send_ready_count = send_ready_result.scalar() or 0
         except Exception as e:
             logger.error(f"❌ Error counting send-ready prospects: {e}", exc_info=True)

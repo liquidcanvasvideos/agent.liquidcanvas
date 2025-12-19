@@ -925,75 +925,75 @@ async def get_pipeline_status(
     
     # Also count verified with email (for backwards compatibility)
     emails_verified = await db.execute(
+        select(func.count(Prospect.id)).where(
+            Prospect.verification_status == VerificationStatus.VERIFIED.value,
+            Prospect.contact_email.isnot(None)
+        )
+    )
+    emails_verified_count = emails_verified.scalar() or 0
+    
+    # Step 5: DRAFT-READY = Prospects where verification_status == "verified" AND email IS NOT NULL
+    # SINGLE SOURCE OF TRUTH: verification_status = "verified" AND contact_email IS NOT NULL
+    draft_ready = await db.execute(
+        select(func.count(Prospect.id)).where(
+            Prospect.verification_status == VerificationStatus.VERIFIED.value,
+            Prospect.contact_email.isnot(None)
+        )
+    )
+    draft_ready_count = draft_ready.scalar() or 0
+    logger.info(f"📊 [PIPELINE STATUS] DRAFT-READY count: {draft_ready_count} (verification_status = 'verified' AND contact_email IS NOT NULL)")
+    
+    # Backwards compatibility alias
+    drafting_ready = draft_ready_count
+    drafting_ready_count = draft_ready_count
+    
+    # Step 6: DRAFTED = Prospects where draft_status = "drafted"
+    # SINGLE SOURCE OF TRUTH: draft_status = "drafted"
+    drafted_count = 0
+    try:
+        drafted = await db.execute(
             select(func.count(Prospect.id)).where(
-                Prospect.verification_status == VerificationStatus.VERIFIED.value,
-                Prospect.contact_email.isnot(None)
+                Prospect.draft_status == DraftStatus.DRAFTED.value
             )
         )
-        emails_verified_count = emails_verified.scalar() or 0
-        
-        # Step 5: DRAFT-READY = Prospects where verification_status == "verified" AND email IS NOT NULL
-        # SINGLE SOURCE OF TRUTH: verification_status = "verified" AND contact_email IS NOT NULL
-        draft_ready = await db.execute(
-            select(func.count(Prospect.id)).where(
-                Prospect.verification_status == VerificationStatus.VERIFIED.value,
-                Prospect.contact_email.isnot(None)
-            )
-        )
-        draft_ready_count = draft_ready.scalar() or 0
-        logger.info(f"📊 [PIPELINE STATUS] DRAFT-READY count: {draft_ready_count} (verification_status = 'verified' AND contact_email IS NOT NULL)")
-        
-        # Backwards compatibility alias
-        drafting_ready = draft_ready_count
-        drafting_ready_count = draft_ready_count
-        
-        # Step 6: DRAFTED = Prospects where draft_status = "drafted"
-        # SINGLE SOURCE OF TRUTH: draft_status = "drafted"
+        drafted_count = drafted.scalar() or 0
+        logger.info(f"📊 [PIPELINE STATUS] DRAFTED count: {drafted_count} (draft_status = 'drafted')")
+    except Exception as e:
+        logger.error(f"❌ Error counting drafted prospects: {e}", exc_info=True)
         drafted_count = 0
-        try:
-            drafted = await db.execute(
-                select(func.count(Prospect.id)).where(
-                    Prospect.draft_status == DraftStatus.DRAFTED.value
-                )
+    
+    # Step 7: SENT = Prospects where send_status = "sent"
+    # SINGLE SOURCE OF TRUTH: send_status = "sent"
+    sent_count = 0
+    try:
+        sent = await db.execute(
+            select(func.count(Prospect.id)).where(
+                Prospect.send_status == SendStatus.SENT.value
             )
-            drafted_count = drafted.scalar() or 0
-            logger.info(f"📊 [PIPELINE STATUS] DRAFTED count: {drafted_count} (draft_status = 'drafted')")
-        except Exception as e:
-            logger.error(f"❌ Error counting drafted prospects: {e}", exc_info=True)
-            drafted_count = 0
-        
-        # Step 7: SENT = Prospects where send_status = "sent"
-        # SINGLE SOURCE OF TRUTH: send_status = "sent"
+        )
+        sent_count = sent.scalar() or 0
+        logger.info(f"📊 [PIPELINE STATUS] SENT count: {sent_count} (send_status = 'sent')")
+    except Exception as e:
+        logger.error(f"❌ Error counting sent prospects: {e}", exc_info=True)
         sent_count = 0
-        try:
-            sent = await db.execute(
-                select(func.count(Prospect.id)).where(
-                    Prospect.send_status == SendStatus.SENT.value
-                )
+    
+    # SEND READY = verified + drafted + not sent
+    # SINGLE SOURCE OF TRUTH: verification_status = "verified" AND draft_status = "drafted" AND send_status != "sent"
+    send_ready_count = 0
+    try:
+        send_ready = await db.execute(
+            select(func.count(Prospect.id)).where(
+                Prospect.contact_email.isnot(None),
+                Prospect.verification_status == VerificationStatus.VERIFIED.value,
+                Prospect.draft_status == DraftStatus.DRAFTED.value,
+                Prospect.send_status != SendStatus.SENT.value
             )
-            sent_count = sent.scalar() or 0
-            logger.info(f"📊 [PIPELINE STATUS] SENT count: {sent_count} (send_status = 'sent')")
-        except Exception as e:
-            logger.error(f"❌ Error counting sent prospects: {e}", exc_info=True)
-            sent_count = 0
-        
-        # SEND READY = verified + drafted + not sent
-        # SINGLE SOURCE OF TRUTH: verification_status = "verified" AND draft_status = "drafted" AND send_status != "sent"
+        )
+        send_ready_count = send_ready.scalar() or 0
+        logger.info(f"📊 [PIPELINE STATUS] SEND-READY count: {send_ready_count} (verified + drafted + not sent)")
+    except Exception as e:
+        logger.error(f"❌ Error counting send-ready prospects: {e}", exc_info=True)
         send_ready_count = 0
-        try:
-            send_ready = await db.execute(
-                select(func.count(Prospect.id)).where(
-                    Prospect.contact_email.isnot(None),
-                    Prospect.verification_status == VerificationStatus.VERIFIED.value,
-                    Prospect.draft_status == DraftStatus.DRAFTED.value,
-                    Prospect.send_status != SendStatus.SENT.value
-                )
-            )
-            send_ready_count = send_ready.scalar() or 0
-            logger.info(f"📊 [PIPELINE STATUS] SEND-READY count: {send_ready_count} (verified + drafted + not sent)")
-        except Exception as e:
-            logger.error(f"❌ Error counting send-ready prospects: {e}", exc_info=True)
-            send_ready_count = 0
     
     # Defensive logging: Log all counts for debugging
     logger.info(f"📊 [PIPELINE STATUS] Counts computed: discovered={discovered_count}, approved={approved_count}, "
@@ -1224,5 +1224,5 @@ async def debug_counts(
             "with_domain": 0,
             "with_email": 0,
             "with_both": 0
-    }
+        }
 

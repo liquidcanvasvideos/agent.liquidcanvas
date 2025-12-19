@@ -514,7 +514,7 @@ async def get_review_prospects(
 # ============================================
 
 class DraftRequest(BaseModel):
-    prospect_ids: List[UUID]
+    prospect_ids: Optional[List[UUID]] = None
 
 
 class DraftResponse(BaseModel):
@@ -533,69 +533,49 @@ async def draft_emails(
     """
     STEP 6: Generate email drafts using Gemini
     
-    Requirements:
-    - Only verified prospects can be drafted
-    - Gemini receives: website info, category, location, email type, outreach intent
-    - Sets draft_status = "drafted"
+    Requirements (DATA-DRIVEN):
+    - verification_status = 'verified'
+    - contact_email IS NOT NULL
+    - draft_status = 'pending' (not already drafted)
+    
+    If prospect_ids provided, use those (manual selection).
+    If prospect_ids empty or not provided, query all draft-ready prospects automatically.
     """
-    # Get verified LEAD prospects ready for drafting
-    # Requirements: stage = LEAD, email IS NOT NULL, verification_status = verified
-    # Defensive: Check if stage column exists
-    from sqlalchemy import text
-    prospects = []
-    try:
-        column_check = await db.execute(
-            text("""
-                SELECT column_name
-                FROM information_schema.columns 
-                WHERE table_name = 'prospects' 
-                AND column_name = 'stage'
-            """)
-        )
-        if column_check.fetchone():
-            # Column exists - use stage-based query
-            # Check for VERIFIED stage (after verification, stage becomes VERIFIED, not LEAD)
-            # OR LEAD stage with verified status (in case verification didn't update stage yet)
-            result = await db.execute(
-                select(Prospect).where(
-                    Prospect.id.in_(request.prospect_ids),
-                    Prospect.stage.in_([ProspectStage.VERIFIED.value, ProspectStage.LEAD.value]),
-                    Prospect.verification_status == VerificationStatus.VERIFIED.value,
-                    Prospect.contact_email.isnot(None),
-                    Prospect.draft_status == "pending"
-                )
-            )
-            prospects = result.scalars().all()
-        else:
-            # Column doesn't exist yet - fallback to verification_status + email
-            logger.warning("⚠️  stage column not found, using fallback logic for drafting")
-            result = await db.execute(
-                select(Prospect).where(
-                    Prospect.id.in_(request.prospect_ids),
-                    Prospect.verification_status == VerificationStatus.VERIFIED.value,
-                    Prospect.contact_email.isnot(None),
-                    Prospect.draft_status == "pending"
-                )
-            )
-            prospects = result.scalars().all()
-    except Exception as e:
-        logger.error(f"❌ Error checking stage column or querying prospects for drafting: {e}", exc_info=True)
-        # Fallback to verification_status + email if stage check/query fails
+    # DATA-DRIVEN: Query draft-ready prospects directly from database
+    # Draft-ready = verified + email + not drafted
+    if request.prospect_ids is not None and len(request.prospect_ids) > 0:
+        # Manual selection: use provided prospect_ids but validate they meet draft-ready criteria
         result = await db.execute(
             select(Prospect).where(
                 Prospect.id.in_(request.prospect_ids),
                 Prospect.verification_status == VerificationStatus.VERIFIED.value,
                 Prospect.contact_email.isnot(None),
-                Prospect.draft_status == "pending"
+                Prospect.draft_status == DraftStatus.PENDING.value
             )
         )
         prospects = result.scalars().all()
-    
-    if len(prospects) != len(request.prospect_ids):
-        raise HTTPException(
-            status_code=400,
-            detail="Some prospects not found or not ready for drafting. Ensure they are LEAD stage, verified, and have emails."
+        
+        if len(prospects) != len(request.prospect_ids):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Some prospects not found or not ready for drafting. Found {len(prospects)} ready out of {len(request.prospect_ids)} requested. Ensure they are verified, have emails, and draft_status is 'pending'."
+            )
+    else:
+        # Automatic: query all draft-ready prospects
+        result = await db.execute(
+            select(Prospect).where(
+                Prospect.verification_status == VerificationStatus.VERIFIED.value,
+                Prospect.contact_email.isnot(None),
+                Prospect.draft_status == DraftStatus.PENDING.value
+            )
         )
+        prospects = result.scalars().all()
+        
+        if len(prospects) == 0:
+            raise HTTPException(
+                status_code=422,
+                detail="No prospects ready for drafting. Ensure prospects have verified email and draft_status is 'pending'."
+            )
     
     logger.info(f"✍️  [PIPELINE STEP 6] Drafting emails for {len(prospects)} verified prospects")
     

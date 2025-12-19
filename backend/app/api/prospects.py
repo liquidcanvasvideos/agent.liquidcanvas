@@ -967,16 +967,14 @@ async def list_scraped_emails(
                 prospects = result.scalars().all()
                 logger.info(f"🔍 [SCRAPED EMAILS] Found {len(prospects)} prospects from database query")
         except Exception as query_err:
-            error_msg = str(query_err).lower()
+            # CRITICAL: Do NOT return empty array - raise error instead
             logger.error(f"❌ [SCRAPED EMAILS] Query failed: {query_err}", exc_info=True)
             await db.rollback()
-            # Return empty result instead of 500 error
-            return {
-                "data": [],
-                "total": total,  # Keep the count we got earlier
-                "skip": skip,
-                "limit": limit
-            }
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database query failed: {str(query_err)}. This indicates a schema mismatch - check logs."
+            )
         
         # Safely convert prospects to response - use manual dict construction to avoid final_body issues
         prospect_responses = []

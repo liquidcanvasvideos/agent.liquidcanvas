@@ -787,14 +787,14 @@ async def get_pipeline_status(
     
     # Wrap entire endpoint in try-catch to handle transaction errors
     try:
-    # Step 1: DISCOVERED (canonical status for discovered websites)
+        # Step 1: DISCOVERED (canonical status for discovered websites)
         # SINGLE SOURCE OF TRUTH: discovery_status = "DISCOVERED"
-    discovered = await db.execute(
-        select(func.count(Prospect.id)).where(
-            Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
+        discovered = await db.execute(
+            select(func.count(Prospect.id)).where(
+                Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
+            )
         )
-    )
-    discovered_count = discovered.scalar() or 0
+        discovered_count = discovered.scalar() or 0
         logger.info(f"📊 [PIPELINE STATUS] DISCOVERED count: {discovered_count} (discovery_status = 'DISCOVERED')")
     
     # Step 2: APPROVED (approval_status = "approved")

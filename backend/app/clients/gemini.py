@@ -34,6 +34,62 @@ class GeminiClient:
         """Check if client is properly configured"""
         return bool(self.api_key and self.api_key.strip())
     
+    async def _search_liquid_canvas_info(self) -> str:
+        """
+        Search for information about Liquid Canvas using Gemini's web search
+        
+        Returns:
+            String with information about Liquid Canvas
+        """
+        search_url = f"{self.BASE_URL}/models/gemini-2.0-flash-exp:generateContent?key={self.api_key}"
+        
+        search_prompt = """Search for information about Liquid Canvas (liquidcanvas.art). 
+Find out:
+1. What services they offer
+2. What type of art/creative work they do
+3. Their unique value proposition
+4. Any notable projects or work
+5. Their website URL: liquidcanvas.art
+
+Return a concise summary (2-3 sentences) about Liquid Canvas that can be used in outreach emails."""
+        
+        search_payload = {
+            "contents": [{
+                "parts": [{
+                    "text": search_prompt
+                }]
+            }],
+            "tools": [{
+                "googleSearchRetrieval": {}
+            }],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 512
+            }
+        }
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                logger.info("🔍 Searching for Liquid Canvas information...")
+                response = await client.post(search_url, json=search_payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("candidates") and len(result["candidates"]) > 0:
+                    candidate = result["candidates"][0]
+                    if candidate.get("content") and candidate["content"].get("parts"):
+                        parts = candidate["content"]["parts"]
+                        if parts and isinstance(parts, list) and len(parts) > 0:
+                            info_text = parts[0].get("text", "") if isinstance(parts[0], dict) else ""
+                            if info_text:
+                                logger.info("✅ Found Liquid Canvas information")
+                                return info_text
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to search for Liquid Canvas info: {e}. Using default info.")
+        
+        # Fallback default information
+        return """Liquid Canvas (liquidcanvas.art) is an art and creative services company specializing in innovative visual solutions and artistic collaborations. We offer custom creative services, digital art, and artistic partnerships for businesses and creators."""
+    
     async def compose_email(
         self,
         domain: str,
@@ -43,7 +99,7 @@ class GeminiClient:
         contact_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Compose an email using Gemini API
+        Compose an email using Gemini API with Liquid Canvas information
         
         Args:
             domain: Website domain
@@ -56,6 +112,9 @@ class GeminiClient:
             Dictionary with subject and body
         """
         url = f"{self.BASE_URL}/models/gemini-2.0-flash-exp:generateContent?key={self.api_key}"
+        
+        # Search for Liquid Canvas information
+        liquid_canvas_info = await self._search_liquid_canvas_info()
         
         # Build context for the email
         context_parts = []
@@ -71,7 +130,12 @@ class GeminiClient:
         context = "\n".join(context_parts) if context_parts else f"Website: {domain}"
         
         # Create prompt for structured JSON output
-        prompt = f"""You are a professional outreach specialist for an art and creative services company.
+        prompt = f"""You are a professional outreach specialist for Liquid Canvas (liquidcanvas.art), an art and creative services company.
+
+About Liquid Canvas:
+{liquid_canvas_info}
+
+Website: https://liquidcanvas.art
 
 Your task is to compose a personalized outreach email to a website owner or content creator.
 
@@ -81,15 +145,17 @@ Context about their website:
 Requirements:
 1. The email must be professional, friendly, and personalized
 2. It should mention something specific about their website/content
-3. It should introduce our art and creative services company
-4. It should be concise (2-3 short paragraphs)
-5. It should include a clear call-to-action
-6. It should be warm but not overly salesy
+3. It should introduce Liquid Canvas (liquidcanvas.art) and reference our services naturally
+4. Reference our website (liquidcanvas.art) where relevant and appropriate
+5. It should be concise (2-3 short paragraphs)
+6. It should include a clear call-to-action
+7. It should be warm but not overly salesy
+8. Use the information about Liquid Canvas to make the email authentic and specific
 
 You MUST return ONLY valid JSON with this exact structure:
 {{
   "subject": "Email subject line (max 60 characters)",
-  "body": "Email body text (2-3 paragraphs, professional tone)"
+  "body": "Email body text (2-3 paragraphs, professional tone, references liquidcanvas.art where appropriate)"
 }}
 
 Do not include any text before or after the JSON. Return ONLY the JSON object."""
@@ -270,8 +336,16 @@ Do not include any text before or after the JSON. Return ONLY the JSON object.""
         previous_emails_text = "\n\n".join(previous_context) if previous_context else "No previous emails"
         followup_count = len(previous_emails)
         
+        # Search for Liquid Canvas information (cache it to avoid repeated searches)
+        liquid_canvas_info = await self._search_liquid_canvas_info()
+        
         # Create prompt for follow-up email
-        prompt = f"""You are a professional outreach specialist for an art and creative services company.
+        prompt = f"""You are a professional outreach specialist for Liquid Canvas (liquidcanvas.art), an art and creative services company.
+
+About Liquid Canvas:
+{liquid_canvas_info}
+
+Website: https://liquidcanvas.art
 
 Your task is to compose a SHORT, PLAYFUL, LIGHT, WITTY follow-up email. This is follow-up #{followup_count} in the thread.
 
@@ -289,6 +363,7 @@ Requirements:
 5. It should be memorable and stand out - think of it as a friendly nudge, not a sales pitch
 6. Keep it concise - people are busy
 7. The tone should be LIGHT and CONVERSATIONAL - like you're reaching out to a friend, not a cold prospect
+8. Reference Liquid Canvas (liquidcanvas.art) naturally if relevant, but keep it subtle in follow-ups
 
 You MUST return ONLY valid JSON with this exact structure:
 {{

@@ -1153,7 +1153,9 @@ async def get_websites(
                 status_code=500,
                 detail=f"Database query failed: {str(query_err)}. This indicates a schema mismatch - check logs."
             )
-            
+        
+        # Get total count (outside exception handler so it's always defined)
+        try:
             total_result = await db.execute(
                 select(func.count(Prospect.id)).where(
                     Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
@@ -1161,6 +1163,11 @@ async def get_websites(
             )
             total = total_result.scalar() or 0
             logger.info(f"🔍 [WEBSITES] Total prospects with discovery_status = 'DISCOVERED': {total}")
+        except Exception as count_err:
+            logger.error(f"❌ [WEBSITES] Failed to get total count: {count_err}", exc_info=True)
+            # Fallback: use length of websites if count fails
+            total = len(websites)
+            logger.warning(f"⚠️  [WEBSITES] Using websites length as total fallback: {total}")
         
         # Safely build response data with error handling
         data = []

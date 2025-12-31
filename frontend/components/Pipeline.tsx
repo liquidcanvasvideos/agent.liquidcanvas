@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Circle, Lock, Loader2, Search, Scissors, Shield, Eye, FileText, Send, RefreshCw, ArrowRight } from 'lucide-react'
+import { CheckCircle2, Circle, Lock, Loader2, Search, Scissors, Shield, Eye, FileText, Send, RefreshCw, ArrowRight, AlertCircle } from 'lucide-react'
 import { 
   pipelineDiscover, 
   pipelineApprove, 
@@ -13,6 +13,7 @@ import {
   pipelineStatus,
   listJobs,
   normalizePipelineStatus,
+  isMasterSwitchEnabled,
   type Job,
   type NormalizedPipelineStatus
 } from '@/lib/api'
@@ -33,6 +34,29 @@ export default function Pipeline() {
   const [status, setStatus] = useState<NormalizedPipelineStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [discoveryJobs, setDiscoveryJobs] = useState<Job[]>([])
+  const [masterSwitchEnabled, setMasterSwitchEnabled] = useState(false)
+
+  // Check master switch status
+  useEffect(() => {
+    const checkMasterSwitch = () => {
+      const enabled = isMasterSwitchEnabled()
+      setMasterSwitchEnabled(enabled)
+    }
+    
+    // Check on mount
+    checkMasterSwitch()
+    
+    // Listen for changes
+    const handleMasterSwitchChange = (e: CustomEvent) => {
+      setMasterSwitchEnabled(e.detail.enabled)
+    }
+    
+    window.addEventListener('masterSwitchChanged', handleMasterSwitchChange as EventListener)
+    
+    return () => {
+      window.removeEventListener('masterSwitchChanged', handleMasterSwitchChange as EventListener)
+    }
+  }, [])
 
   const loadStatus = async () => {
     try {
@@ -115,6 +139,10 @@ export default function Pipeline() {
   }
 
   const handleScrape = async () => {
+    if (!masterSwitchEnabled) {
+      alert('Master switch is disabled. Please enable it in Automation Control to run pipeline activities.')
+      return
+    }
     try {
       await pipelineScrape()
       await loadStatus()
@@ -124,6 +152,10 @@ export default function Pipeline() {
   }
 
   const handleApproveAll = async () => {
+    if (!masterSwitchEnabled) {
+      alert('Master switch is disabled. Please enable it in Automation Control to run pipeline activities.')
+      return
+    }
     try {
       const res = await pipelineApproveAll()
       alert(res.message || `Approved ${res.approved_count} websites`)
@@ -137,6 +169,10 @@ export default function Pipeline() {
   }
 
   const handleVerify = async () => {
+    if (!masterSwitchEnabled) {
+      alert('Master switch is disabled. Please enable it in Automation Control to run pipeline activities.')
+      return
+    }
     try {
       await pipelineVerify()
       await loadStatus()
@@ -146,6 +182,10 @@ export default function Pipeline() {
   }
 
   const handleDraft = async () => {
+    if (!masterSwitchEnabled) {
+      alert('Master switch is disabled. Please enable it in Automation Control to run pipeline activities.')
+      return
+    }
     try {
       await pipelineDraft()
       await loadStatus()
@@ -155,6 +195,10 @@ export default function Pipeline() {
   }
 
   const handleSend = async () => {
+    if (!masterSwitchEnabled) {
+      alert('Master switch is disabled. Please enable it in Automation Control to run pipeline activities.')
+      return
+    }
     try {
       await pipelineSend()
       await loadStatus()
@@ -199,6 +243,10 @@ export default function Pipeline() {
       count: normalizedStatus.discovered,
       ctaText: normalizedStatus.discovered > 0 ? 'View Websites' : 'Start Discovery',
       ctaAction: () => {
+        if (!masterSwitchEnabled) {
+          alert('Master switch is disabled. Please enable it in Automation Control to run pipeline activities.')
+          return
+        }
         // Navigate to Websites tab or show discovery form
         if (normalizedStatus.discovered > 0) {
           // Trigger tab change via custom event
@@ -328,11 +376,23 @@ export default function Pipeline() {
             <span>Refresh</span>
           </button>
         </div>
-        <div className="mt-2 p-2 bg-gradient-to-r from-olive-50 to-olive-50 rounded-lg border border-olive-200">
-          <p className="text-xs text-gray-700">
-            <span className="font-semibold">Orchestrate your creative outreach</span> — Each stage builds on the previous, creating meaningful connections through art and creativity.
-          </p>
-        </div>
+        {!masterSwitchEnabled && (
+          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-red-600" />
+              <p className="text-xs text-red-700">
+                <span className="font-semibold">Master switch is OFF</span> — Enable it in Automation Control to use pipeline activities.
+              </p>
+            </div>
+          </div>
+        )}
+        {masterSwitchEnabled && (
+          <div className="mt-2 p-2 bg-gradient-to-r from-olive-50 to-olive-50 rounded-lg border border-olive-200">
+            <p className="text-xs text-gray-700">
+              <span className="font-semibold">Orchestrate your creative outreach</span> — Each stage builds on the previous, creating meaningful connections through art and creativity.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Step Cards */}
@@ -426,17 +486,18 @@ export default function Pipeline() {
 
               <button
                 onClick={step.ctaAction}
-                disabled={isLocked}
+                disabled={isLocked || !masterSwitchEnabled}
                 className={`w-full px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1 transition-all duration-200 ${
-                  isLocked
+                  isLocked || !masterSwitchEnabled
                     ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                     : isCompleted
                     ? 'bg-olive-600 text-white hover:bg-olive-700 hover:shadow-md hover:scale-102'
                     : 'bg-olive-600 text-white hover:bg-olive-700 hover:shadow-md hover:scale-102'
                 }`}
+                title={!masterSwitchEnabled ? 'Master switch must be enabled' : undefined}
               >
                 <span>{step.ctaText}</span>
-                {!isLocked && <ArrowRight className="w-3 h-3" />}
+                {!isLocked && masterSwitchEnabled && <ArrowRight className="w-3 h-3" />}
               </button>
             </div>
           )
@@ -476,6 +537,12 @@ function Step1Discovery({ onComplete }: { onComplete: () => void }) {
   ]
 
   const handleDiscover = async () => {
+    // Check master switch
+    if (!isMasterSwitchEnabled()) {
+      setError('Master switch is disabled. Please enable it in Automation Control to run pipeline activities.')
+      return
+    }
+    
     if (categories.length === 0) {
       setError('Please select at least one category')
       return

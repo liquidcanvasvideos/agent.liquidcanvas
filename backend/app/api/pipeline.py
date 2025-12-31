@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from app.db.database import get_db
 from app.api.auth import get_current_user_optional
+from app.api.scraper import check_master_switch
 from app.models.prospect import (
     Prospect,
     DiscoveryStatus,
@@ -71,6 +72,14 @@ async def discover_websites(
     
     if not request.locations or len(request.locations) == 0:
         raise HTTPException(status_code=400, detail="At least one location is required")
+    
+    # Check master switch
+    master_enabled = await check_master_switch(db)
+    if not master_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Master switch is disabled. Please enable it in Automation Control to run pipeline activities."
+        )
     
     logger.info(f"🔍 [PIPELINE STEP 1] Discovery request - categories: {request.categories}, locations: {request.locations}, keywords: {request.keywords}")
     
@@ -208,6 +217,14 @@ async def approve_all_prospects(
     This is used by the pipeline UI "Approve All Websites" CTA to avoid
     deadlocking users when they have discovered websites but none are approved yet.
     """
+    # Check master switch
+    master_enabled = await check_master_switch(db)
+    if not master_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Master switch is disabled. Please enable it in Automation Control to run pipeline activities."
+        )
+    
     # Find all discovered prospects that are not yet approved
     result = await db.execute(
         select(Prospect).where(
@@ -274,6 +291,14 @@ async def scrape_websites(
     - Extracts visible emails only
     - Sets scrape_status = "SCRAPED" or "NO_EMAIL_FOUND"
     """
+    # Check master switch
+    master_enabled = await check_master_switch(db)
+    if not master_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Master switch is disabled. Please enable it in Automation Control to run pipeline activities."
+        )
+    
     # Get discovered, non-rejected prospects ready for scraping
     # Scrape eligibility:
     # - discovery_status == DISCOVERED
@@ -385,6 +410,14 @@ async def verify_emails(
     - Sets verification_status = "verified" or "unverified"
     - Never overwrites scraped emails without confirmation
     """
+    # Check master switch
+    master_enabled = await check_master_switch(db)
+    if not master_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Master switch is disabled. Please enable it in Automation Control to run pipeline activities."
+        )
+    
     # Get prospects ready for verification
     # REMOVED: Hard stage filtering (stage = LEAD)
     # Use status flags instead: scraped + email + not already verified
@@ -544,6 +577,14 @@ async def draft_emails(
     If prospect_ids provided, use those (manual selection).
     If prospect_ids empty or not provided, query all draft-ready prospects automatically.
     """
+    # Check master switch
+    master_enabled = await check_master_switch(db)
+    if not master_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Master switch is disabled. Please enable it in Automation Control to run pipeline activities."
+        )
+    
     # DATA-DRIVEN: Query draft-ready prospects directly from database
     # Draft-ready = verified + email + (draft_status = 'pending' OR draft_status IS NULL)
     # Accept NULL for existing prospects created before draft_status column was added
@@ -718,6 +759,14 @@ async def send_emails(
     If prospect_ids provided, use those (manual selection).
     If prospect_ids empty or not provided, query all send-ready prospects automatically.
     """
+    # Check master switch
+    master_enabled = await check_master_switch(db)
+    if not master_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Master switch is disabled. Please enable it in Automation Control to run pipeline activities."
+        )
+    
     # DATA-DRIVEN: Query send-ready prospects directly from database
     # Redefine send-ready as: verified + drafted + not sent
     prospects = []  # Initialize prospects list

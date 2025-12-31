@@ -1334,3 +1334,79 @@ export async function manualVerify(request: ManualVerifyRequest): Promise<Manual
   }
   return res.json()
 }
+
+// ============================================
+// MASTER SWITCH & AUTOMATION CONTROL
+// ============================================
+
+export interface MasterSwitchResponse {
+  enabled: boolean
+  message: string
+}
+
+export async function getMasterSwitch(): Promise<MasterSwitchResponse> {
+  const res = await authenticatedFetch(`${API_BASE}/scraper/master`)
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to get master switch status' }))
+    throw new Error(error.detail || 'Failed to get master switch status')
+  }
+  return res.json()
+}
+
+export async function setMasterSwitch(enabled: boolean): Promise<MasterSwitchResponse> {
+  const res = await authenticatedFetch(`${API_BASE}/scraper/master`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to set master switch' }))
+    throw new Error(error.detail || 'Failed to set master switch')
+  }
+  const result = await res.json()
+  // Store in localStorage for Pipeline to check
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('master_switch_enabled', String(enabled))
+    // Dispatch event so Pipeline can react
+    window.dispatchEvent(new CustomEvent('masterSwitchChanged', { detail: { enabled } }))
+  }
+  return result
+}
+
+export interface AutomationSettings {
+  enabled: boolean
+}
+
+export async function getAutomationSettings(): Promise<AutomationSettings> {
+  const res = await authenticatedFetch(`${API_BASE}/settings/automation`)
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to get automation settings' }))
+    throw new Error(error.detail || 'Failed to get automation settings')
+  }
+  return res.json()
+}
+
+export async function updateAutomationSettings(settings: AutomationSettings): Promise<AutomationSettings> {
+  const res = await authenticatedFetch(`${API_BASE}/settings/automation`, {
+    method: 'POST',
+    body: JSON.stringify(settings),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to update automation settings' }))
+    throw new Error(error.detail || 'Failed to update automation settings')
+  }
+  const result = await res.json()
+  // Store in localStorage for Pipeline to check
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('automation_enabled', String(settings.enabled))
+    // Dispatch event so Pipeline can react
+    window.dispatchEvent(new CustomEvent('automationSettingsChanged', { detail: settings }))
+  }
+  return result
+}
+
+// Helper function to check if master switch is enabled (for Pipeline)
+export function isMasterSwitchEnabled(): boolean {
+  if (typeof window === 'undefined') return false
+  const stored = localStorage.getItem('master_switch_enabled')
+  return stored === 'true'
+}

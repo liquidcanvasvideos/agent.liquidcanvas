@@ -329,7 +329,7 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
       setShowCategoryUpdate(false)
       setUpdateCategory('')
       setTimeout(() => {
-        loadProspects()
+        loadProspects().catch(err => console.error('Error reloading prospects:', err))
       }, 500)
     } catch (err: any) {
       setError(err.message || 'Failed to update category')

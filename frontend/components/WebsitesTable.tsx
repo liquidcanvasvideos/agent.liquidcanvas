@@ -186,7 +186,7 @@ export default function WebsitesTable() {
       setShowCategoryUpdate(false)
       setUpdateCategory('')
       setTimeout(() => {
-        loadWebsites()
+        loadWebsites().catch(err => console.error('Error reloading websites:', err))
       }, 500)
     } catch (err: any) {
       setError(err.message || 'Failed to update category')

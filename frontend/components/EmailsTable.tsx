@@ -110,7 +110,7 @@ export default function EmailsTable() {
       setShowCategoryUpdate(false)
       setUpdateCategory('')
       setTimeout(() => {
-        loadSentEmails()
+        loadSentEmails().catch(err => console.error('Error reloading emails:', err))
       }, 500)
     } catch (err: any) {
       setError(err.message || 'Failed to update category')

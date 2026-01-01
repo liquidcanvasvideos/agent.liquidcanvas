@@ -284,20 +284,41 @@ async def discover_websites_async(job_id: str) -> Dict[str, Any]:
                         break
                     
                     # Determine category for this query
+                    # Categories come from frontend as: "Art Gallery", "Museum", "Museums", "Art Studio", etc.
                     query_category = None
+                    query_lower = query.lower()
+                    
+                    # Try to match categories directly from the query
                     for cat in categories:
+                        cat_lower = cat.lower()
+                        # Check if category name appears in the query
+                        if cat_lower in query_lower:
+                            query_category = cat  # Use the original category name (preserves case)
+                            break
+                    
+                    # If no direct match, try to infer from keywords
+                    if not query_category:
                         category_keywords = {
-                            "home_decor": ["home decor", "interior design", "furniture"],
-                            "holiday": ["holiday", "seasonal", "christmas"],
-                            "parenting": ["parenting", "mom", "family"],
-                            "audio_visuals": ["audio visual", "sound engineering", "video editing"],
-                            "gift_guides": ["gift", "present"],
-                            "tech_innovation": ["tech", "startup", "innovation", "gadget"]
+                            "Art Gallery": ["art gallery", "gallery", "art exhibition"],
+                            "Museum": ["museum", "museums", "art museum"],
+                            "Museums": ["museum", "museums", "art museum"],
+                            "Art Studio": ["art studio", "studio", "artist studio"],
+                            "Art School": ["art school", "art academy", "art institute"],
+                            "Art Fair": ["art fair", "art exhibition", "art show"],
+                            "Art Dealer": ["art dealer", "art dealer", "art broker"],
+                            "Art Consultant": ["art consultant", "art advisor", "art advisory"],
+                            "Art Publisher": ["art publisher", "art publishing", "art press"],
+                            "Art Magazine": ["art magazine", "art publication", "art journal"]
                         }
-                        if cat in category_keywords:
-                            if any(kw in query.lower() for kw in category_keywords[cat]):
-                                query_category = cat
-                                break
+                        for cat in categories:
+                            if cat in category_keywords:
+                                if any(kw in query_lower for kw in category_keywords[cat]):
+                                    query_category = cat
+                                    break
+                    
+                    # Fallback: use first category if no match found
+                    if not query_category and categories:
+                        query_category = categories[0]
                     
                     # Check if job was cancelled before starting new query
                     await db.refresh(job)

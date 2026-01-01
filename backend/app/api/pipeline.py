@@ -1279,6 +1279,65 @@ async def get_websites(
         )
 
 
+# ============================================
+# CATEGORY MANAGEMENT
+# ============================================
+
+class UpdateCategoryRequest(BaseModel):
+    prospect_ids: List[UUID]
+    category: str
+
+
+class UpdateCategoryResponse(BaseModel):
+    success: bool
+    updated_count: int
+    message: str
+
+
+@router.post("/update_category", response_model=UpdateCategoryResponse)
+async def update_prospect_category(
+    request: UpdateCategoryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """
+    Update category for existing prospects.
+    Useful for categorizing records that were created before categories were properly set.
+    """
+    if not request.prospect_ids or len(request.prospect_ids) == 0:
+        raise HTTPException(status_code=400, detail="At least one prospect ID is required")
+    
+    if not request.category or not request.category.strip():
+        raise HTTPException(status_code=400, detail="Category is required")
+    
+    logger.info(f"🏷️  [CATEGORY UPDATE] Updating {len(request.prospect_ids)} prospects to category '{request.category}'")
+    
+    # Get prospects
+    result = await db.execute(
+        select(Prospect).where(Prospect.id.in_(request.prospect_ids))
+    )
+    prospects = result.scalars().all()
+    
+    if len(prospects) != len(request.prospect_ids):
+        logger.warning(f"⚠️  [CATEGORY UPDATE] Only found {len(prospects)} of {len(request.prospect_ids)} requested prospects")
+    
+    # Update category for each prospect
+    updated_count = 0
+    for prospect in prospects:
+        prospect.discovery_category = request.category.strip()
+        updated_count += 1
+    
+    await db.commit()
+    
+    logger.info(f"✅ [CATEGORY UPDATE] Updated {updated_count} prospects to category '{request.category}'")
+    
+    return UpdateCategoryResponse(
+        success=True,
+        updated_count=updated_count,
+        message=f"Successfully updated {updated_count} prospect(s) to category '{request.category}'"
+    )
+
+
 @router.get("/debug/counts")
 async def debug_counts(
     db: AsyncSession = Depends(get_db),

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { ExternalLink, RefreshCw, Loader2, Globe, CheckCircle2, X, Trash2 } from 'lucide-react'
-import { listWebsites, pipelineApprove, type Prospect } from '@/lib/api'
+import { listWebsites, pipelineApprove, updateProspectCategory, type Prospect } from '@/lib/api'
 
 interface Website {
   id: string
@@ -27,6 +27,9 @@ export default function WebsitesTable() {
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [showCategoryUpdate, setShowCategoryUpdate] = useState(false)
+  const [updateCategory, setUpdateCategory] = useState<string>('')
+  const [isUpdatingCategory, setIsUpdatingCategory] = useState(false)
 
   // Available categories
   const availableCategories = [
@@ -160,6 +163,38 @@ export default function WebsitesTable() {
     }
   }
 
+  const handleUpdateCategory = async () => {
+    if (selected.size === 0) {
+      setError('Please select at least one website to update')
+      return
+    }
+    
+    if (!updateCategory || !updateCategory.trim()) {
+      setError('Please select a category')
+      return
+    }
+
+    try {
+      setIsUpdatingCategory(true)
+      setError(null)
+      const result = await updateProspectCategory({
+        prospect_ids: Array.from(selected),
+        category: updateCategory.trim()
+      })
+      setError(`✅ ${result.message}`)
+      setSelected(new Set())
+      setShowCategoryUpdate(false)
+      setUpdateCategory('')
+      setTimeout(() => {
+        loadWebsites()
+      }, 500)
+    } catch (err: any) {
+      setError(err.message || 'Failed to update category')
+    } finally {
+      setIsUpdatingCategory(false)
+    }
+  }
+
   if (loading && websites.length === 0) {
     return (
       <div className="glass rounded-3xl shadow-xl p-8 animate-fade-in">
@@ -194,6 +229,14 @@ export default function WebsitesTable() {
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
+          {selected.size > 0 && (
+            <button
+              onClick={() => setShowCategoryUpdate(true)}
+              className="px-2 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Update Category ({selected.size})
+            </button>
+          )}
           <button
             onClick={loadWebsites}
             disabled={loading}
@@ -390,6 +433,59 @@ export default function WebsitesTable() {
             </div>
           )}
         </>
+      )}
+
+      {/* Category Update Modal */}
+      {showCategoryUpdate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="glass rounded-xl shadow-2xl w-full max-w-md p-4 border border-white/20 animate-scale-in">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-gray-900">Update Category</h3>
+              <button
+                onClick={() => {
+                  setShowCategoryUpdate(false)
+                  setUpdateCategory('')
+                }}
+                className="p-1 rounded-lg hover:bg-white/80 text-gray-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <p className="text-xs text-gray-600">
+                Update category for {selected.size} selected website(s)
+              </p>
+              <select
+                value={updateCategory}
+                onChange={(e) => setUpdateCategory(e.target.value)}
+                className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-olive-500 focus:border-olive-500 bg-white"
+              >
+                <option value="">Select Category</option>
+                {availableCategories.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => {
+                    setShowCategoryUpdate(false)
+                    setUpdateCategory('')
+                  }}
+                  className="flex-1 px-3 py-2 text-xs font-medium text-gray-700 glass hover:bg-white/80 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateCategory}
+                  disabled={isUpdatingCategory || !updateCategory}
+                  className="flex-1 px-3 py-2 text-xs font-medium bg-olive-600 text-white rounded-lg hover:bg-olive-700 disabled:opacity-50"
+                >
+                  {isUpdatingCategory ? 'Updating...' : 'Update'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

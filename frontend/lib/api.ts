@@ -1336,6 +1336,33 @@ export async function manualVerify(request: ManualVerifyRequest): Promise<Manual
 }
 
 // ============================================
+// CATEGORY MANAGEMENT
+// ============================================
+
+export interface UpdateCategoryRequest {
+  prospect_ids: string[]
+  category: string
+}
+
+export interface UpdateCategoryResponse {
+  success: boolean
+  updated_count: number
+  message: string
+}
+
+export async function updateProspectCategory(request: UpdateCategoryRequest): Promise<UpdateCategoryResponse> {
+  const res = await authenticatedFetch(`${API_BASE}/pipeline/update_category`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to update category' }))
+    throw new Error(error.detail || 'Failed to update category')
+  }
+  return res.json()
+}
+
+// ============================================
 // MASTER SWITCH & AUTOMATION CONTROL
 // ============================================
 

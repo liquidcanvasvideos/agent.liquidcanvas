@@ -98,6 +98,7 @@ app.add_middleware(
 
 # Include routers
 from app.api import auth, settings, scraper, pipeline, manual, health, social
+from app.api import social_pipeline  # Separate pipeline API for social outreach
 # To use Supabase Auth instead, replace the line below with:
 # from app.api import auth_supabase
 # app.include_router(auth_supabase.router, prefix="/api/auth", tags=["auth"])
@@ -106,10 +107,11 @@ app.include_router(jobs.router, tags=["jobs"])  # Already has /api/jobs prefix
 app.include_router(prospects.router, prefix="/api/prospects", tags=["prospects"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(scraper.router, prefix="/api/scraper", tags=["scraper"])
-app.include_router(pipeline.router, tags=["pipeline"])  # Already has /api/pipeline prefix
+app.include_router(pipeline.router, tags=["pipeline"])  # Already has /api/pipeline prefix (WEBSITE OUTREACH)
 app.include_router(manual.router, tags=["manual"])  # Already has /api/manual prefix
 app.include_router(health.router, tags=["health"])  # Health check endpoints
 app.include_router(social.router, tags=["social"])  # Social outreach - separate from website outreach
+app.include_router(social_pipeline.router, tags=["social-pipeline"])  # Social pipeline - completely separate from website pipeline
 
 # Webhook routes
 from app.api import webhooks

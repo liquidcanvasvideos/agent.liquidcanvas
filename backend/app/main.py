@@ -232,7 +232,7 @@ async def startup():
                     else:
                         logger.info("✅ Website outreach schema validation passed: ORM model matches database")
                     
-                    # Also validate social tables exist
+                    # Also validate social tables exist and create if missing
                     logger.info("🔍 Validating social outreach schema...")
                     from sqlalchemy import text
                     async with engine.begin() as conn:
@@ -249,7 +249,27 @@ async def startup():
                         
                         if missing_tables:
                             logger.warning(f"⚠️  Social tables missing: {missing_tables}")
-                            logger.info("📝 Social tables will be created by Alembic migrations")
+                            logger.info("📝 Attempting to create missing social tables using Base.metadata...")
+                            
+                            # Try to create social tables directly using SQLAlchemy metadata
+                            try:
+                                from app.models import social
+                                # Import all social models to register them with Base
+                                from app.models.social import (
+                                    SocialProfile,
+                                    SocialDiscoveryJob,
+                                    SocialDraft,
+                                    SocialMessage
+                                )
+                                
+                                # Create tables for social models
+                                async with engine.begin() as conn:
+                                    await conn.run_sync(Base.metadata.create_all)
+                                logger.info("✅ Social tables created successfully")
+                            except Exception as create_err:
+                                logger.error(f"❌ Failed to create social tables: {create_err}", exc_info=True)
+                                logger.warning("⚠️  Social tables will need to be created manually via: alembic upgrade head")
+                                logger.warning("⚠️  Or restart the backend to trigger automatic migration")
                         else:
                             logger.info("✅ All social tables exist")
                         

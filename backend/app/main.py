@@ -195,20 +195,24 @@ async def startup():
                 try:
                     from app.utils.schema_validator import validate_prospect_schema, ensure_prospect_schema, SchemaMismatchError
                     
-                    logger.info("🔍 Validating schema after migrations...")
+                    logger.info("🔍 Validating website outreach schema after migrations...")
                     is_valid, missing_columns = await validate_prospect_schema(engine, Base)
                     
                     if not is_valid:
+                        logger.error("=" * 80)
                         logger.error(f"❌ SCHEMA MISMATCH DETECTED: Missing columns: {missing_columns}")
+                        logger.error("=" * 80)
                         logger.error("❌ Attempting to fix schema automatically...")
                         
                         # Try to fix automatically
                         fixed = await ensure_prospect_schema(engine)
                         
                         if not fixed:
+                            logger.error("=" * 80)
                             logger.error("❌ CRITICAL: Could not fix schema mismatch automatically")
                             logger.error("❌ Application will refuse to start to prevent silent failures")
                             logger.error("❌ Please run migrations manually or fix schema manually")
+                            logger.error("=" * 80)
                             raise SchemaMismatchError(
                                 f"Schema mismatch: Missing columns {missing_columns}. "
                                 "Run migrations or fix schema manually before starting application."
@@ -217,13 +221,37 @@ async def startup():
                         # Re-validate after fix
                         is_valid, still_missing = await validate_prospect_schema(engine, Base)
                         if not is_valid:
+                            logger.error("=" * 80)
+                            logger.error(f"❌ Schema still invalid after fix attempt. Missing: {still_missing}")
+                            logger.error("=" * 80)
                             raise SchemaMismatchError(
                                 f"Schema still invalid after fix attempt. Missing: {still_missing}"
                             )
                         
                         logger.info("✅ Schema fixed automatically - validation passed")
                     else:
-                        logger.info("✅ Schema validation passed: ORM model matches database")
+                        logger.info("✅ Website outreach schema validation passed: ORM model matches database")
+                    
+                    # Also validate social tables exist
+                    logger.info("🔍 Validating social outreach schema...")
+                    from sqlalchemy import text
+                    async with engine.begin() as conn:
+                        # Check if social tables exist
+                        tables_check = await conn.execute(text("""
+                            SELECT table_name 
+                            FROM information_schema.tables 
+                            WHERE table_schema = 'public' 
+                            AND table_name IN ('social_profiles', 'social_discovery_jobs', 'social_drafts', 'social_messages')
+                        """))
+                        existing_tables = {row[0] for row in tables_check.fetchall()}
+                        required_tables = {'social_profiles', 'social_discovery_jobs', 'social_drafts', 'social_messages'}
+                        missing_tables = required_tables - existing_tables
+                        
+                        if missing_tables:
+                            logger.warning(f"⚠️  Social tables missing: {missing_tables}")
+                            logger.info("📝 Social tables will be created by Alembic migrations")
+                        else:
+                            logger.info("✅ All social tables exist")
                         
                 except SchemaMismatchError as schema_err:
                     # FAIL FAST - don't start application with broken schema

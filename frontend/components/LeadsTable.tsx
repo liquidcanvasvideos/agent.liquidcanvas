@@ -79,6 +79,25 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
         return catA.localeCompare(catB)
       })
       
+      // CRITICAL: Log raw response before any filtering
+      console.log(`📊 [${emailsOnly ? 'SCRAPED EMAILS' : 'LEADS'}] RAW API RESPONSE:`, {
+        dataLength: response?.data?.length,
+        total: response?.total,
+        hasData: !!response?.data,
+        isArray: Array.isArray(response?.data),
+        firstItem: response?.data?.[0]
+      })
+      
+      // CRITICAL: If backend says there's data but we got empty array, this is an error
+      if (response?.total > 0 && (!response?.data || response.data.length === 0)) {
+        const errorMsg = `Backend reports ${response.total} ${emailsOnly ? 'scraped emails' : 'leads'} but returned empty data array. This indicates a data visibility issue.`
+        console.error(`❌ [${emailsOnly ? 'SCRAPED EMAILS' : 'LEADS'}] ${errorMsg}`)
+        setError(errorMsg)
+        setProspects([])
+        setTotal(response.total)
+        return
+      }
+      
       if (leads.length > 0 || response?.total > 0) {
         console.log(`✅ [${emailsOnly ? 'SCRAPED EMAILS' : 'LEADS'}] Setting prospects:`, leads.length, 'total:', response?.total)
       } else {
@@ -91,7 +110,15 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
       setError(null)
       // Empty data is not an error, it's a valid state
     } catch (error: any) {
+      // CRITICAL: Do not suppress errors - log them clearly
       console.error(`❌ [${emailsOnly ? 'SCRAPED EMAILS' : 'LEADS'}] Failed to load:`, error)
+      console.error(`❌ [${emailsOnly ? 'SCRAPED EMAILS' : 'LEADS'}] Error details:`, {
+        message: error?.message,
+        stack: error?.stack,
+        response: error?.response,
+        status: error?.status
+      })
+      
       let errorMessage = error?.message || `Failed to load ${emailsOnly ? 'scraped emails' : 'leads'}.`
       
       // Provide more specific error messages
@@ -101,8 +128,13 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
         errorMessage = 'Authentication required. Please log in again.'
       } else if (errorMessage.includes('404')) {
         errorMessage = 'API endpoint not found. Please check backend configuration.'
-      } else if (errorMessage.includes('500')) {
-        errorMessage = 'Backend server error. Please try again later.'
+      } else if (errorMessage.includes('500') || errorMessage.includes('Database query failed')) {
+        errorMessage = `Backend server error: ${errorMessage}. Check backend logs for details.`
+      }
+      
+      // In development, show full error
+      if (process.env.NODE_ENV === 'development') {
+        errorMessage = `${errorMessage} (Full error: ${error?.message || 'Unknown error'})`
       }
       
       setError(errorMessage)

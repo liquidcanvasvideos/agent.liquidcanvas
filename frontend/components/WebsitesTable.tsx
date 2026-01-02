@@ -49,6 +49,25 @@ export default function WebsitesTable() {
         hasData: !!response?.data,
         isArray: Array.isArray(response?.data)
       })
+      // CRITICAL: Log raw response before any filtering
+      console.log('📊 [WEBSITES] RAW API RESPONSE:', {
+        dataLength: response?.data?.length,
+        total: response?.total,
+        hasData: !!response?.data,
+        isArray: Array.isArray(response?.data),
+        firstItem: response?.data?.[0]
+      })
+      
+      // CRITICAL: If backend says there's data but we got empty array, this is an error
+      if (response?.total > 0 && (!response?.data || response.data.length === 0)) {
+        const errorMsg = `Backend reports ${response.total} websites but returned empty data array. This indicates a data visibility issue.`
+        console.error(`❌ [WEBSITES] ${errorMsg}`)
+        setError(errorMsg)
+        setWebsites([])
+        setTotal(response.total)
+        return
+      }
+      
       if (response?.data && Array.isArray(response.data)) {
         let websitesData = response.data
         
@@ -68,15 +87,30 @@ export default function WebsitesTable() {
         
         setWebsites(websitesData)
         setTotal(selectedCategory === 'all' ? (response.total ?? websitesData.length) : websitesData.length)
-        console.log('✅ [WEBSITES] Set websites:', websitesData.length)
+        console.log('✅ [WEBSITES] Set websites:', websitesData.length, 'total:', response.total)
       } else {
         console.warn('⚠️ [WEBSITES] Invalid response structure:', response)
         setWebsites([])
         setTotal(0)
       }
     } catch (error: any) {
+      // CRITICAL: Do not suppress errors - log them clearly
       console.error('❌ [WEBSITES] Failed to load websites:', error)
-      setError(error?.message || 'Failed to load websites. Check if backend is running.')
+      console.error('❌ [WEBSITES] Error details:', {
+        message: error?.message,
+        stack: error?.stack,
+        response: error?.response,
+        status: error?.status
+      })
+      
+      let errorMessage = error?.message || 'Failed to load websites. Check if backend is running.'
+      
+      // In development, show full error
+      if (process.env.NODE_ENV === 'development') {
+        errorMessage = `${errorMessage} (Full error: ${error?.message || 'Unknown error'})`
+      }
+      
+      setError(errorMessage)
       setWebsites([])
       setTotal(0)
     } finally {

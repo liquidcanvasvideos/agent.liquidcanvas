@@ -1182,11 +1182,22 @@ async def get_websites(
         # Pipeline counts: discovery_status = "DISCOVERED"
         logger.info(f"🔍 [WEBSITES] Querying prospects with discovery_status = 'DISCOVERED' (skip={skip}, limit={limit})")
         
-        # Initialize total to avoid UnboundLocalError
-        total = 0
-        websites = []
+        # Get total count FIRST (before pagination)
+        try:
+            total_result = await db.execute(
+                select(func.count(Prospect.id)).where(
+                    Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
+                )
+            )
+            total = total_result.scalar() or 0
+            logger.info(f"📊 [WEBSITES] RAW COUNT (before pagination): {total} prospects with discovery_status = 'DISCOVERED'")
+        except Exception as count_err:
+            logger.error(f"❌ [WEBSITES] Failed to get total count: {count_err}", exc_info=True)
+            total = 0
         
-        # NO WORKAROUNDS - Schema validation ensures columns exist
+        # Get paginated results
+        # Schema validation ensures columns exist - use ORM query directly
+        websites = []
         try:
             result = await db.execute(
                 select(Prospect).where(
@@ -1197,7 +1208,7 @@ async def get_websites(
                 .limit(limit)
             )
             websites = result.scalars().all()
-            logger.info(f"🔍 [WEBSITES] Found {len(websites)} websites from database query")
+            logger.info(f"📊 [WEBSITES] QUERY RESULT: Found {len(websites)} websites from database query (total available: {total})")
         except Exception as query_err:
             # CRITICAL: Do NOT return empty array - raise error instead
             logger.error(f"❌ [WEBSITES] Query failed: {query_err}", exc_info=True)
@@ -1206,21 +1217,6 @@ async def get_websites(
                 status_code=500,
                 detail=f"Database query failed: {str(query_err)}. This indicates a schema mismatch - check logs."
             )
-        
-        # Get total count (outside exception handler so it's always defined)
-        try:
-            total_result = await db.execute(
-                select(func.count(Prospect.id)).where(
-                    Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value
-                )
-            )
-            total = total_result.scalar() or 0
-            logger.info(f"🔍 [WEBSITES] Total prospects with discovery_status = 'DISCOVERED': {total}")
-        except Exception as count_err:
-            logger.error(f"❌ [WEBSITES] Failed to get total count: {count_err}", exc_info=True)
-            # Fallback: use length of websites if count fails
-            total = len(websites)
-            logger.warning(f"⚠️  [WEBSITES] Using websites length as total fallback: {total}")
         
         # Safely build response data with error handling
         data = []

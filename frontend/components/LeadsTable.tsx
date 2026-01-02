@@ -91,7 +91,19 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
       // Empty data is not an error, it's a valid state
     } catch (error: any) {
       console.error(`❌ [${emailsOnly ? 'SCRAPED EMAILS' : 'LEADS'}] Failed to load:`, error)
-      const errorMessage = error?.message || `Failed to load ${emailsOnly ? 'scraped emails' : 'leads'}. Check if backend is running.`
+      let errorMessage = error?.message || `Failed to load ${emailsOnly ? 'scraped emails' : 'leads'}.`
+      
+      // Provide more specific error messages
+      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+        errorMessage = 'Unable to connect to backend. Please check if the server is running.'
+      } else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+        errorMessage = 'Authentication required. Please log in again.'
+      } else if (errorMessage.includes('404')) {
+        errorMessage = 'API endpoint not found. Please check backend configuration.'
+      } else if (errorMessage.includes('500')) {
+        errorMessage = 'Backend server error. Please try again later.'
+      }
+      
       setError(errorMessage)
       setProspects([])
       setTotal(0)

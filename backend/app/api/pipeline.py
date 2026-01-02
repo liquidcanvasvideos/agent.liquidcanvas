@@ -1344,12 +1344,41 @@ class AutoCategorizeResponse(BaseModel):
     message: str
 
 
-def auto_categorize_prospect(prospect: Prospect) -> Optional[str]:
+async def auto_categorize_prospect(prospect: Prospect, db: AsyncSession) -> Optional[str]:
     """
-    Automatically determine category for a prospect based on domain, title, and other metadata.
+    Automatically determine category for a prospect based on:
+    1. Existing category (if already set, preserve it)
+    2. Same-domain prospects (inherit from other prospects with same domain)
+    3. Pattern matching (domain, title, URL analysis)
+    
     Returns the category name or None if no match found.
     """
-    # Get text to analyze
+    # Priority 1: If prospect already has a category, preserve it
+    if prospect.discovery_category and prospect.discovery_category.strip() and prospect.discovery_category not in ['N/A', 'Unknown', '']:
+        logger.debug(f"✅ [AUTO CATEGORIZE] Prospect {prospect.id} already has category: {prospect.discovery_category}")
+        return prospect.discovery_category
+    
+    # Priority 2: Check if other prospects with the same domain have a category
+    if prospect.domain:
+        try:
+            result = await db.execute(
+                select(Prospect.discovery_category).where(
+                    Prospect.domain == prospect.domain,
+                    Prospect.discovery_category.isnot(None),
+                    Prospect.discovery_category != '',
+                    Prospect.discovery_category != 'N/A',
+                    Prospect.discovery_category != 'Unknown',
+                    Prospect.id != prospect.id  # Exclude self
+                ).limit(1)
+            )
+            same_domain_category = result.scalar_one_or_none()
+            if same_domain_category:
+                logger.info(f"✅ [AUTO CATEGORIZE] Inherited category '{same_domain_category}' from same-domain prospect for {prospect.domain}")
+                return same_domain_category
+        except Exception as e:
+            logger.warning(f"⚠️  [AUTO CATEGORIZE] Error checking same-domain prospects: {e}")
+    
+    # Priority 3: Pattern matching based on domain, title, and URL
     domain_lower = (prospect.domain or '').lower()
     title_lower = (prospect.page_title or '').lower()
     url_lower = (prospect.page_url or '').lower()
@@ -1372,6 +1401,7 @@ def auto_categorize_prospect(prospect: Prospect) -> Optional[str]:
     for category, patterns in category_patterns.items():
         for pattern in patterns:
             if pattern in combined_text:
+                logger.info(f"✅ [AUTO CATEGORIZE] Detected category '{category}' from pattern matching for {prospect.domain}")
                 return category
     
     return None
@@ -1405,7 +1435,7 @@ async def auto_categorize_all(
     
     categorized_count = 0
     for prospect in prospects:
-        category = auto_categorize_prospect(prospect)
+        category = await auto_categorize_prospect(prospect, db)
         if category:
             prospect.discovery_category = category
             categorized_count += 1

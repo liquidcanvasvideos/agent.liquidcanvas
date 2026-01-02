@@ -182,12 +182,14 @@ async def startup():
                     alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
                     logger.info("✅ Converted asyncpg URL to psycopg2 format for Alembic")
             
-            # Run migrations FIRST
+            # Run migrations FIRST - AUTOMATIC ON EVERY STARTUP
             try:
                 logger.info("🚀 Executing: alembic upgrade head")
+                logger.info("📝 This runs automatically on every backend startup")
                 command.upgrade(alembic_cfg, "head")
                 logger.info("=" * 60)
                 logger.info("✅ Database migrations completed successfully")
+                logger.info("✅ All tables are up-to-date with latest schema")
                 logger.info("=" * 60)
                 
                 # CRITICAL: Validate schema after migrations

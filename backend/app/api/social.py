@@ -2,6 +2,11 @@
 Social Media Outreach API
 
 Separate from Website Outreach - parallel system with no shared logic.
+
+FEATURE-SCOPED SCHEMA VALIDATION:
+- Social endpoints check only social tables
+- Missing tables return 200 with structured metadata (not 500)
+- Website endpoints are unaffected
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +16,9 @@ from uuid import UUID
 import logging
 from pydantic import BaseModel
 
-from app.db.database import get_db
+from app.db.database import get_db, engine
 from app.api.auth import get_current_user_optional
+from app.utils.schema_validator import check_social_schema_ready
 from app.models.social import (
     SocialProfile,
     SocialDiscoveryJob,
@@ -40,9 +46,11 @@ class SocialDiscoveryRequest(BaseModel):
 
 class SocialDiscoveryResponse(BaseModel):
     success: bool
-    job_id: UUID
+    job_id: Optional[UUID] = None
     message: str
     profiles_count: int
+    status: Optional[str] = None  # "active" | "inactive"
+    reason: Optional[str] = None  # Explanation if inactive
 
 
 @router.post("/discover", response_model=SocialDiscoveryResponse)
@@ -55,7 +63,25 @@ async def discover_profiles(
     Discover social media profiles
     
     Platform-specific discovery logic will be implemented per platform.
+    
+    Returns 200 with status="inactive" if social tables are missing (not 500).
     """
+    # Feature-scoped schema check - only checks social tables
+    schema_status = await check_social_schema_ready(engine)
+    
+    if not schema_status["ready"]:
+        logger.warning(f"⚠️  [SOCIAL DISCOVERY] Social schema not ready: {schema_status['reason']}")
+        logger.warning(f"⚠️  Missing tables: {', '.join(schema_status['missing_tables'])}")
+        # Return 200 with structured metadata - not a 500 error
+        return SocialDiscoveryResponse(
+            success=False,
+            job_id=None,
+            message=f"Social outreach feature is not available: {schema_status['reason']}",
+            profiles_count=0,
+            status="inactive",
+            reason=schema_status["reason"]
+        )
+    
     try:
         platform = SocialPlatform(request.platform.lower())
     except ValueError:
@@ -85,26 +111,14 @@ async def discover_profiles(
             success=True,
             job_id=job.id,
             message=f"Discovery job created for {platform.value}",
-            profiles_count=0
+            profiles_count=0,
+            status="active"
         )
     except Exception as e:
         error_msg = str(e)
         logger.error(f"❌ [SOCIAL DISCOVERY] Error creating discovery job: {error_msg}", exc_info=True)
         
-        # Schema errors should never reach here - startup validation ensures tables exist
-        # If we get a table error, it's a programming error, not a schema issue
-        if "does not exist" in error_msg.lower() or "relation" in error_msg.lower() or "f405" in error_msg.lower() or "UndefinedTableError" in error_msg:
-            logger.critical("=" * 80)
-            logger.critical("❌ [SOCIAL DISCOVERY] CRITICAL PROGRAMMING ERROR")
-            logger.critical("❌ Tables should exist - startup validation should have caught this")
-            logger.critical("❌ This indicates a bug in startup validation or migration execution")
-            logger.critical("=" * 80)
-            # Return 500 - this is a server fault, not a user error
-            raise HTTPException(
-                status_code=500,
-                detail="Internal server error: Database schema validation failed. Please contact support."
-            )
-        
+        # Log the error but return a user-friendly message
         raise HTTPException(
             status_code=500,
             detail=f"Failed to create discovery job: {error_msg}"
@@ -129,6 +143,15 @@ class SocialProfileResponse(BaseModel):
     created_at: str
 
 
+class SocialProfilesListResponse(BaseModel):
+    data: List[dict]
+    total: int
+    skip: int
+    limit: int
+    status: Optional[str] = None  # "active" | "inactive"
+    reason: Optional[str] = None  # Explanation if inactive
+
+
 @router.get("/profiles")
 async def list_profiles(
     skip: int = 0,
@@ -138,7 +161,27 @@ async def list_profiles(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[str] = Depends(get_current_user_optional)
 ):
-    """List discovered social profiles"""
+    """
+    List discovered social profiles
+    
+    Returns 200 with empty data and status="inactive" if social tables are missing (not 500).
+    """
+    # Feature-scoped schema check - only checks social tables
+    schema_status = await check_social_schema_ready(engine)
+    
+    if not schema_status["ready"]:
+        logger.warning(f"⚠️  [SOCIAL PROFILES] Social schema not ready: {schema_status['reason']}")
+        logger.warning(f"⚠️  Missing tables: {', '.join(schema_status['missing_tables'])}")
+        # Return 200 with empty data and structured metadata - not a 500 error
+        return SocialProfilesListResponse(
+            data=[],
+            total=0,
+            skip=skip,
+            limit=limit,
+            status="inactive",
+            reason=schema_status["reason"]
+        )
+    
     try:
         logger.info(f"📊 [SOCIAL PROFILES] Request: skip={skip}, limit={limit}, platform={platform}, qualification_status={qualification_status}")
         
@@ -204,7 +247,8 @@ async def list_profiles(
             ],
             "total": total,
             "skip": skip,
-            "limit": limit
+            "limit": limit,
+            "status": "active"
         }
         
         logger.info(f"✅ [SOCIAL PROFILES] Returning {len(response_data['data'])} profiles (total: {total})")
@@ -215,18 +259,7 @@ async def list_profiles(
         error_msg = str(e)
         logger.error(f"❌ [SOCIAL PROFILES] Error listing social profiles: {error_msg}", exc_info=True)
         
-        # Schema errors should never reach here - startup validation ensures tables exist
-        if "does not exist" in error_msg.lower() or "relation" in error_msg.lower() or "f405" in error_msg.lower() or "UndefinedTableError" in error_msg:
-            logger.critical("=" * 80)
-            logger.critical("❌ [SOCIAL PROFILES] CRITICAL PROGRAMMING ERROR")
-            logger.critical("❌ Tables should exist - startup validation should have caught this")
-            logger.critical("=" * 80)
-            # Return 500 - this is a server fault
-            raise HTTPException(
-                status_code=500,
-                detail="Internal server error: Database schema validation failed. Please contact support."
-            )
-        
+        # Log the error but return a user-friendly message
         raise HTTPException(status_code=500, detail=f"Failed to list profiles: {error_msg}")
 
 
@@ -256,6 +289,14 @@ async def create_drafts(
     
     If is_followup=True, generates follow-up messages using Gemini.
     """
+    # Feature-scoped schema check
+    schema_status = await check_social_schema_ready(engine)
+    if not schema_status["ready"]:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Social outreach feature is not available: {schema_status['reason']}"
+        )
+    
     if not request.profile_ids:
         raise HTTPException(status_code=400, detail="At least one profile ID is required")
     
@@ -352,6 +393,14 @@ async def send_messages(
     
     Requires draft to exist for each profile.
     """
+    # Feature-scoped schema check
+    schema_status = await check_social_schema_ready(engine)
+    if not schema_status["ready"]:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Social outreach feature is not available: {schema_status['reason']}"
+        )
+    
     if not request.profile_ids:
         raise HTTPException(status_code=400, detail="At least one profile ID is required")
     
@@ -422,6 +471,14 @@ async def create_followups(
     
     Automatically generates follow-up using Gemini with humorous, clever tone.
     """
+    # Feature-scoped schema check
+    schema_status = await check_social_schema_ready(engine)
+    if not schema_status["ready"]:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Social outreach feature is not available: {schema_status['reason']}"
+        )
+    
     if not request.profile_ids:
         raise HTTPException(status_code=400, detail="At least one profile ID is required")
     
@@ -481,4 +538,3 @@ async def create_followups(
         drafts_created=drafts_created,
         message=f"Created {drafts_created} follow-up draft(s)"
     )
-

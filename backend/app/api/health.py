@@ -1,9 +1,15 @@
 """
 Health check endpoints
+
+FEATURE-SCOPED VALIDATION:
+- /health - Basic health check (always returns 200)
+- /health/ready - Database connectivity check
+- /health/schema - Full schema diagnostics (can return 500 if invalid)
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
 from app.db.database import engine
+from app.utils.schema_validator import get_full_schema_diagnostics
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,32 +39,40 @@ async def readiness():
 
 @router.get("/health/schema")
 async def schema_check():
-    """Check if social outreach tables exist"""
+    """
+    Full schema validation endpoint - provides comprehensive diagnostics.
+    
+    This endpoint can safely return 500 if schema is invalid.
+    It is NOT used by the frontend UI - it's for diagnostics only.
+    """
     try:
-        async with engine.begin() as conn:
-            result = await conn.execute(text("""
-                SELECT table_name 
-                FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name IN ('social_profiles', 'social_discovery_jobs', 'social_drafts', 'social_messages')
-                ORDER BY table_name
-            """))
-            tables = [row[0] for row in result.fetchall()]
-            
-            expected_tables = ['social_discovery_jobs', 'social_drafts', 'social_messages', 'social_profiles']
-            missing_tables = set(expected_tables) - set(tables)
-            
-            return {
-                "status": "ok" if not missing_tables else "incomplete",
-                "tables_found": tables,
-                "tables_missing": list(missing_tables),
-                "migration_needed": len(missing_tables) > 0,
-                "message": "All tables exist" if not missing_tables else f"Missing tables: {', '.join(missing_tables)}. Run: alembic upgrade head"
-            }
+        diagnostics = await get_full_schema_diagnostics(engine)
+        
+        # If schema is invalid, return 500 (this is a diagnostic endpoint)
+        if diagnostics["status"] == "error":
+            raise HTTPException(
+                status_code=500,
+                detail=diagnostics
+            )
+        
+        if not diagnostics.get("all_tables_valid", False):
+            # Schema is incomplete - return 500 for diagnostic purposes
+            raise HTTPException(
+                status_code=500,
+                detail=diagnostics
+            )
+        
+        # All good - return 200 with diagnostics
+        return diagnostics
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Schema check failed: {e}", exc_info=True)
-        return {
-            "status": "error",
-            "error": str(e),
-            "message": "Could not check schema"
-        }
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": "error",
+                "error": str(e),
+                "message": "Could not check schema"
+            }
+        )

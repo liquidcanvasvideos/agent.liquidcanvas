@@ -1,14 +1,18 @@
 """
 Schema validation utilities for ensuring database schema matches ORM models.
 
-CRITICAL: This module enforces schema correctness at startup.
-If schema validation fails, the application MUST NOT start.
+FEATURE-SCOPED VALIDATION:
+- Startup validation logs errors but doesn't exit (allows app to start)
+- Request-time validation is feature-scoped (only checks relevant tables)
+- Social endpoints check only social tables
+- Website endpoints check only website tables
+- Health endpoint provides full diagnostic validation
 """
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeMeta
 import logging
-from typing import Tuple, List, Set
+from typing import Tuple, List, Set, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -112,12 +116,50 @@ async def validate_website_tables_exist(engine: AsyncEngine) -> Tuple[bool, List
         return (False, list(required_tables))
 
 
+async def check_social_schema_ready(engine: AsyncEngine) -> Dict[str, Any]:
+    """
+    Feature-scoped schema check for social endpoints.
+    
+    Returns a dictionary with status information.
+    Does NOT raise exceptions - returns structured metadata.
+    
+    Returns:
+        {
+            "ready": bool,
+            "status": str,  # "active" | "inactive"
+            "reason": str,   # Explanation if inactive
+            "missing_tables": List[str],
+            "tables_found": List[str]
+        }
+    """
+    is_valid, missing_tables = await validate_social_tables_exist(engine)
+    
+    if is_valid:
+        return {
+            "ready": True,
+            "status": "active",
+            "reason": None,
+            "missing_tables": [],
+            "tables_found": ['social_profiles', 'social_discovery_jobs', 'social_drafts', 'social_messages']
+        }
+    else:
+        return {
+            "ready": False,
+            "status": "inactive",
+            "reason": "social schema not initialized",
+            "missing_tables": missing_tables,
+            "tables_found": []
+        }
+
+
 async def validate_all_tables_exist(engine: AsyncEngine) -> None:
     """
     Validate that ALL required tables exist (website + social).
     
     Raises SchemaValidationError if any tables are missing.
     This function FAILS HARD - application will not start if validation fails.
+    
+    NOTE: This is only called at startup. Request handlers use feature-scoped checks.
     """
     logger.info("=" * 80)
     logger.info("🔍 CRITICAL: Validating database schema completeness...")
@@ -158,6 +200,58 @@ async def validate_all_tables_exist(engine: AsyncEngine) -> None:
     logger.info("=" * 80)
     logger.info("✅ Database schema validation PASSED - All required tables exist")
     logger.info("=" * 80)
+
+
+async def get_full_schema_diagnostics(engine: AsyncEngine) -> Dict[str, Any]:
+    """
+    Get comprehensive schema diagnostics for health endpoint.
+    
+    Returns detailed information about all tables, migrations, etc.
+    This is safe to call from request handlers - returns structured data.
+    """
+    try:
+        # Check website tables
+        website_valid, website_missing = await validate_website_tables_exist(engine)
+        
+        # Check social tables
+        social_valid, social_missing = await validate_social_tables_exist(engine)
+        
+        # Check Alembic version
+        alembic_version = None
+        try:
+            async with engine.begin() as conn:
+                result = await conn.execute(text("""
+                    SELECT version_num 
+                    FROM alembic_version 
+                    LIMIT 1
+                """))
+                row = result.fetchone()
+                if row:
+                    alembic_version = row[0]
+        except Exception as e:
+            logger.warning(f"Could not read Alembic version: {e}")
+        
+        return {
+            "status": "ok" if (website_valid and social_valid) else "incomplete",
+            "website_tables": {
+                "valid": website_valid,
+                "missing": website_missing
+            },
+            "social_tables": {
+                "valid": social_valid,
+                "missing": social_missing
+            },
+            "alembic_version": alembic_version,
+            "all_tables_valid": website_valid and social_valid,
+            "message": "All tables exist" if (website_valid and social_valid) else f"Missing tables: website={website_missing}, social={social_missing}"
+        }
+    except Exception as e:
+        logger.error(f"Schema diagnostics failed: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Could not check schema"
+        }
 
 
 # Keep existing functions for backward compatibility

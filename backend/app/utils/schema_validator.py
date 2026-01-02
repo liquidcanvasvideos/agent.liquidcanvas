@@ -65,6 +65,20 @@ async def ensure_prospect_schema(engine: AsyncEngine) -> bool:
     Ensure all Prospect model columns exist in database.
     Adds missing columns if needed.
     
+    CRITICAL COLUMNS that MUST exist:
+    - draft_subject TEXT
+    - draft_body TEXT  
+    - final_body TEXT
+    - thread_id UUID
+    - sequence_index INTEGER DEFAULT 0
+    
+    Returns:
+        True if schema is now correct, False if it cannot be fixed
+    """
+    """
+    Ensure all Prospect model columns exist in database.
+    Adds missing columns if needed.
+    
     Returns:
         True if schema is now correct, False if it cannot be fixed
     """
@@ -97,11 +111,32 @@ async def ensure_prospect_schema(engine: AsyncEngine) -> bool:
         for col_name in sorted(missing):
             col = model_columns[col_name]
             
-            # Determine SQL type
-            # Check for UUID type first (before python_type check)
+            # Determine SQL type with better handling
             type_str = str(col.type)
+            
+            # Handle UUID type
             if 'UUID' in type_str or 'uuid' in type_str.lower():
                 sql_type = "UUID"
+            # Handle Numeric types
+            elif 'NUMERIC' in type_str.upper() or 'DECIMAL' in type_str.upper():
+                # Extract precision and scale if available
+                if hasattr(col.type, 'precision') and hasattr(col.type, 'scale'):
+                    sql_type = f"NUMERIC({col.type.precision},{col.type.scale})"
+                else:
+                    sql_type = "NUMERIC"
+            # Handle Integer types
+            elif 'INTEGER' in type_str.upper() or 'INT' in type_str.upper() or 'BIGINT' in type_str.upper():
+                sql_type = "INTEGER"
+            # Handle Boolean types
+            elif 'BOOLEAN' in type_str.upper() or 'BOOL' in type_str.upper():
+                sql_type = "BOOLEAN"
+            # Handle JSON types
+            elif 'JSON' in type_str.upper():
+                sql_type = "JSONB"  # PostgreSQL uses JSONB
+            # Handle DateTime types
+            elif 'DATETIME' in type_str.upper() or 'TIMESTAMP' in type_str.upper():
+                sql_type = "TIMESTAMP WITH TIME ZONE"
+            # Handle String/Text types
             elif hasattr(col.type, 'python_type'):
                 if col.type.python_type == str:
                     sql_type = "TEXT" if col.type.length is None else f"VARCHAR({col.type.length})"

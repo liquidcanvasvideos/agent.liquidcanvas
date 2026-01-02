@@ -1454,3 +1454,86 @@ export function isMasterSwitchEnabled(): boolean {
   const stored = localStorage.getItem('master_switch_enabled')
   return stored === 'true'
 }
+
+// ============================================
+// SOCIAL OUTREACH API (Separate from Website Outreach)
+// ============================================
+
+export interface SocialDiscoveryRequest {
+  platform: 'linkedin' | 'instagram' | 'tiktok'
+  filters: {
+    keywords?: string[]
+    location?: string
+    hashtags?: string[]
+  }
+  max_results?: number
+}
+
+export interface SocialDiscoveryResponse {
+  success: boolean
+  job_id: string
+  message: string
+  profiles_count: number
+}
+
+export interface SocialProfile {
+  id: string
+  platform: string
+  handle: string
+  profile_url: string
+  display_name?: string
+  bio?: string
+  followers_count: number
+  location?: string
+  is_business: boolean
+  qualification_status: string
+  created_at: string
+}
+
+export interface SocialProfileListResponse {
+  data: SocialProfile[]
+  total: number
+  skip: number
+  limit: number
+}
+
+export async function discoverSocialProfiles(request: SocialDiscoveryRequest): Promise<SocialDiscoveryResponse> {
+  return await apiRequest<SocialDiscoveryResponse>('/social/discover', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+}
+
+export async function listSocialProfiles(
+  skip: number = 0,
+  limit: number = 50,
+  platform?: string,
+  qualification_status?: string
+): Promise<SocialProfileListResponse> {
+  const params = new URLSearchParams({ skip: skip.toString(), limit: limit.toString() })
+  if (platform) params.append('platform', platform)
+  if (qualification_status) params.append('qualification_status', qualification_status)
+  
+  return await apiRequest<SocialProfileListResponse>(`/social/profiles?${params.toString()}`)
+}
+
+export async function createSocialDrafts(request: { profile_ids: string[]; is_followup?: boolean }): Promise<{ success: boolean; drafts_created: number; message: string }> {
+  return await apiRequest('/social/drafts', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+}
+
+export async function sendSocialMessages(request: { profile_ids: string[] }): Promise<{ success: boolean; messages_sent: number; message: string }> {
+  return await apiRequest('/social/send', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+}
+
+export async function createSocialFollowups(request: { profile_ids: string[] }): Promise<{ success: boolean; drafts_created: number; message: string }> {
+  return await apiRequest('/social/followup', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+}

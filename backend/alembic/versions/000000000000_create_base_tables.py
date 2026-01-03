@@ -72,8 +72,8 @@ def upgrade() -> None:
     
     # Create email_logs table (idempotent)
     if 'email_logs' not in existing_tables:
-        op.create_table((
-        'email_logs',
+        op.create_table(
+            'email_logs',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column('prospect_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('subject', sa.Text(), nullable=True),

@@ -305,8 +305,8 @@ async def startup():
             
             # EMERGENCY FIX: Check and add discovery_query_id column if missing
             try:
-            from sqlalchemy import text
-            async with engine.begin() as conn:
+                from sqlalchemy import text
+                async with engine.begin() as conn:
                 # Check if column exists
                 result = await conn.execute(
                     text("""

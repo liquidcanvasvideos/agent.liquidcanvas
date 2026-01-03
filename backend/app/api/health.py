@@ -16,7 +16,7 @@ import os
 from typing import Optional
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api")  # Add /api prefix to match other routers
+router = APIRouter()  # No prefix - routes are /health, /health/ready, /health/migrate
 
 
 @router.get("/health")

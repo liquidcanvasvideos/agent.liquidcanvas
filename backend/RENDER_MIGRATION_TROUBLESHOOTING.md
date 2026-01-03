@@ -11,22 +11,29 @@ If you're seeing `503 Service Unavailable` with "social schema not initialized",
 2. Select your backend service
 3. Click on **"Shell"** tab (or use the terminal icon)
 
-### Step 2: Run Migrations
-Try these commands in order:
+### Step 2: Run Migrations (EASIEST METHOD)
+**Copy and paste this entire block into Render Shell:**
 
 ```bash
-# Option 1: If alembic.ini is in /app
-cd /app
-alembic upgrade head
+# Find and run migrations automatically
+if [ -f "alembic.ini" ]; then
+    alembic upgrade head
+elif [ -f "backend/alembic.ini" ]; then
+    cd backend && alembic upgrade head
+elif [ -f "/app/alembic.ini" ]; then
+    cd /app && alembic upgrade head
+elif [ -f "/app/backend/alembic.ini" ]; then
+    cd /app/backend && alembic upgrade head
+else
+    echo "Finding alembic.ini..."
+    find /app -name "alembic.ini" 2>/dev/null
+    echo "Please cd to the directory containing alembic.ini and run: alembic upgrade head"
+fi
+```
 
-# Option 2: If alembic.ini is in /app/backend
-cd /app/backend
-alembic upgrade head
-
-# Option 3: Find alembic.ini first
-find /app -name "alembic.ini"
-# Then cd to that directory and run:
-alembic upgrade head
+**OR use the migration script (if available):**
+```bash
+bash run_migrations.sh
 ```
 
 ### Step 3: Verify Tables Created

@@ -301,7 +301,8 @@ async def startup():
                     prospects_count = count_result.scalar() or 0
                     logger.info(f"📊 Prospects count in database: {prospects_count}")
             except Exception as db_check_err:
-            logger.error(f"❌ Error checking database connection: {db_check_err}", exc_info=True)
+                logger.error(f"❌ Error checking database connection: {db_check_err}", exc_info=True)
+            
         
         # EMERGENCY FIX: Check and add discovery_query_id column if missing
         try:

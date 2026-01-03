@@ -13,7 +13,9 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision = 'add_social_columns'
-down_revision = 'merge_social_branches'  # Chain after the merge migration
+# Chain from final_schema_repair which should exist in production
+# If merge_social_branches exists, this will still work as it's idempotent
+down_revision = 'final_schema_repair'
 branch_labels = None
 depends_on = None
 
@@ -58,13 +60,21 @@ def upgrade():
         op.add_column('prospects',
             sa.Column('source_platform', sa.String(), nullable=True)
         )
-        # Add CHECK constraint
+        # Add CHECK constraint (drop first if exists)
+        try:
+            op.execute(text("ALTER TABLE prospects DROP CONSTRAINT IF EXISTS check_source_platform"))
+        except:
+            pass
         op.execute(text("""
             ALTER TABLE prospects 
             ADD CONSTRAINT check_source_platform 
             CHECK (source_platform IS NULL OR source_platform IN ('linkedin', 'instagram', 'facebook', 'tiktok'))
         """))
-        # Create index
+        # Create index (drop first if exists)
+        try:
+            op.drop_index('ix_prospects_source_platform', table_name='prospects')
+        except:
+            pass
         op.create_index('ix_prospects_source_platform', 'prospects', ['source_platform'])
         print("✅ Added source_platform column")
     else:

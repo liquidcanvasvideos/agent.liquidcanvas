@@ -532,28 +532,19 @@ async def send_messages(
                 logger.warning(f"⚠️  Profile {profile_id} not found")
                 continue
             
-            # TODO: Send message via platform API (LinkedIn, Instagram, TikTok, Facebook)
-            # For now, create message record
+            # Send message via platform API using sending service
+            from app.services.social.sending import SocialSendingService
             
-            from datetime import datetime, timezone
+            sending_service = SocialSendingService()
+            send_result = await sending_service.send_message(profile, draft.draft_body, db)
             
-            message = SocialMessage(
-                profile_id=profile.id,
-                platform=profile.platform,
-                message_type=MessageType.FOLLOWUP.value if draft.is_followup else MessageType.INITIAL.value,
-                draft_body=draft.draft_body,
-                sent_body=draft.draft_body,  # TODO: Use actual sent message from API
-                status=MessageStatus.SENT.value,
-                sent_at=datetime.now(timezone.utc)
-            )
-            
-            db.add(message)
-            
-            # Update profile
-            profile.outreach_status = OutreachStatus.SENT.value
-            profile.last_contacted_at = datetime.now(timezone.utc)
-            
-            messages_sent += 1
+            if send_result.get("success"):
+                messages_sent += 1
+                logger.info(f"✅ [SOCIAL PIPELINE STAGE 4] Message sent to @{profile.username}")
+            else:
+                error = send_result.get("error", "Unknown error")
+                logger.warning(f"⚠️  [SOCIAL PIPELINE STAGE 4] Failed to send to @{profile.username}: {error}")
+                # Message record already created by sending service with FAILED status
         
         await db.commit()
         

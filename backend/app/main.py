@@ -281,26 +281,26 @@ async def startup():
             try:
                 from sqlalchemy import text
                 async with engine.begin() as conn:
-                # Log current database and server address
-                db_info_result = await conn.execute(
-                    text("SELECT current_database(), inet_server_addr()")
-                )
-                db_info = db_info_result.fetchone()
-                if db_info:
-                    db_name = db_info[0]
-                    db_host = db_info[1] or "localhost (local connection)"
-                    logger.info(f"📊 Connected to database: {db_name}")
-                    logger.info(f"📊 Database server address: {db_host}")
-                else:
-                    logger.warning("⚠️  Could not retrieve database connection info")
-                
-                # Log prospects count
-                count_result = await conn.execute(
-                    text("SELECT COUNT(*) FROM prospects")
-                )
-                prospects_count = count_result.scalar() or 0
-                logger.info(f"📊 Prospects count in database: {prospects_count}")
-        except Exception as db_check_err:
+                    # Log current database and server address
+                    db_info_result = await conn.execute(
+                        text("SELECT current_database(), inet_server_addr()")
+                    )
+                    db_info = db_info_result.fetchone()
+                    if db_info:
+                        db_name = db_info[0]
+                        db_host = db_info[1] or "localhost (local connection)"
+                        logger.info(f"📊 Connected to database: {db_name}")
+                        logger.info(f"📊 Database server address: {db_host}")
+                    else:
+                        logger.warning("⚠️  Could not retrieve database connection info")
+                    
+                    # Log prospects count
+                    count_result = await conn.execute(
+                        text("SELECT COUNT(*) FROM prospects")
+                    )
+                    prospects_count = count_result.scalar() or 0
+                    logger.info(f"📊 Prospects count in database: {prospects_count}")
+            except Exception as db_check_err:
             logger.error(f"❌ Error checking database connection: {db_check_err}", exc_info=True)
         
         # EMERGENCY FIX: Check and add discovery_query_id column if missing

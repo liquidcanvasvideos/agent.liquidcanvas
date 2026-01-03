@@ -303,9 +303,8 @@ async def startup():
             except Exception as db_check_err:
                 logger.error(f"❌ Error checking database connection: {db_check_err}", exc_info=True)
             
-        
-        # EMERGENCY FIX: Check and add discovery_query_id column if missing
-        try:
+            # EMERGENCY FIX: Check and add discovery_query_id column if missing
+            try:
             from sqlalchemy import text
             async with engine.begin() as conn:
                 # Check if column exists

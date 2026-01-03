@@ -566,6 +566,23 @@ async def startup():
         logger.info("✅ Server is ready - All validations passed")
     else:
         logger.warning("⚠️  Server is starting with validation issues - some features may not work")
+        # If social tables are missing, log explicit instructions
+        if not schema_valid:
+            try:
+                from app.utils.schema_validator import validate_social_tables_exist
+                social_valid, social_missing = await validate_social_tables_exist(engine)
+                if not social_valid:
+                    logger.error("=" * 80)
+                    logger.error("❌ SOCIAL OUTREACH TABLES MISSING")
+                    logger.error(f"❌ Missing tables: {', '.join(social_missing)}")
+                    logger.error("=" * 80)
+                    logger.error("🔧 TO FIX: Run migrations manually on Render:")
+                    logger.error("   1. Go to Render Dashboard → Your Service → Shell")
+                    logger.error("   2. Run: cd /app && alembic upgrade head")
+                    logger.error("   3. Or: cd /app/backend && alembic upgrade head")
+                    logger.error("=" * 80)
+            except Exception as e:
+                logger.error(f"Could not check social tables: {e}")
     
     # Start scheduler for periodic tasks (always start - scraper check runs every minute)
     try:

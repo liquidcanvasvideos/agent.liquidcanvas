@@ -27,6 +27,8 @@ interface StepCard {
   count: number
   ctaText: string
   ctaAction: () => void
+  viewText?: string  // Optional "View" button text (e.g., "View Prospects", "View Sent")
+  viewAction?: () => void  // Optional "View" button action (navigates to tab)
   jobStatus?: string
 }
 
@@ -331,15 +333,19 @@ export default function Pipeline() {
       status: normalizedStatus.leads === 0 ? 'locked' :
               normalizedStatus.emails_verified > 0 ? 'completed' : 'active',
       count: normalizedStatus.emails_verified,
-      ctaText: normalizedStatus.leads === 0 ? 'Scrape Websites First' :
-               normalizedStatus.emails_verified > 0 ? 'View Verified' : 'Start Verification',
+      ctaText: normalizedStatus.leads === 0 ? 'Scrape Websites First' : 'Start Verification',
       ctaAction: () => {
         if (normalizedStatus.leads === 0) {
           alert('Please scrape websites first to create leads')
           return
         }
         handleVerify()
-      }
+      },
+      viewText: normalizedStatus.emails_verified > 0 ? 'View Verified' : undefined,
+      viewAction: normalizedStatus.emails_verified > 0 ? () => {
+        const event = new CustomEvent('change-tab', { detail: 'leads' })
+        window.dispatchEvent(event)
+      } : undefined
     },
     {
       id: 4,
@@ -352,16 +358,21 @@ export default function Pipeline() {
         ? (normalizedStatus.drafted > 0 ? 'completed' : 'active')
         : 'locked',
       count: normalizedStatus.drafted,
-      ctaText: normalizedStatus.drafted > 0 ? 'View Drafts' :
-               normalizedStatus.drafting_ready === 0 ? 'Verify Leads First' :
-               'Start Drafting',
+      ctaText: normalizedStatus.drafting_ready === 0 && normalizedStatus.drafted === 0 
+        ? 'Verify Leads First' 
+        : 'Start Drafting',
       ctaAction: () => {
         if (normalizedStatus.drafting_ready === 0 && normalizedStatus.drafted === 0) {
           alert('Please verify leads first. Leads must be promoted, have emails, and be verified.')
           return
         }
         handleDraft()
-      }
+      },
+      viewText: normalizedStatus.drafted > 0 ? 'View Drafts' : undefined,
+      viewAction: normalizedStatus.drafted > 0 ? () => {
+        const event = new CustomEvent('change-tab', { detail: 'leads' })
+        window.dispatchEvent(event)
+      } : undefined
     },
     {
       id: 5,
@@ -374,16 +385,21 @@ export default function Pipeline() {
         ? (normalizedStatus.sent > 0 ? 'completed' : 'active')
         : 'locked',
       count: normalizedStatus.sent,
-      ctaText: normalizedStatus.sent > 0 ? 'View Sent' :
-               normalizedStatus.drafted > 0 || normalizedStatus.send_ready_count > 0 ? 'Start Sending' :
-               'No Emails Ready',
+      ctaText: (normalizedStatus.drafted > 0 || normalizedStatus.send_ready_count > 0)
+        ? 'Start Sending'
+        : 'No Emails Ready',
       ctaAction: () => {
         if (normalizedStatus.send_ready_count === 0 && normalizedStatus.drafted === 0) {
           alert('No emails ready for sending. Ensure prospects have verified email, draft subject, and draft body.')
           return
         }
         handleSend()
-      }
+      },
+      viewText: normalizedStatus.sent > 0 ? 'View Sent' : undefined,
+      viewAction: normalizedStatus.sent > 0 ? () => {
+        const event = new CustomEvent('change-tab', { detail: 'emails' })
+        window.dispatchEvent(event)
+      } : undefined
     }
   ]
 
@@ -514,21 +530,32 @@ export default function Pipeline() {
                 )}
               </div>
 
-              <button
-                onClick={step.ctaAction}
-                disabled={isLocked || !masterSwitchEnabled}
-                className={`w-full px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1 transition-all duration-200 ${
-                  isLocked || !masterSwitchEnabled
-                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                    : isCompleted
-                    ? 'bg-olive-600 text-white hover:bg-olive-700 hover:shadow-md hover:scale-102'
-                    : 'bg-olive-600 text-white hover:bg-olive-700 hover:shadow-md hover:scale-102'
-                }`}
-                title={!masterSwitchEnabled ? 'Master switch must be enabled' : undefined}
-              >
-                <span>{step.ctaText}</span>
-                {!isLocked && masterSwitchEnabled && <ArrowRight className="w-3 h-3" />}
-              </button>
+              <div className={`flex gap-2 ${step.viewText && step.viewAction ? 'flex-col' : ''}`}>
+                {step.viewText && step.viewAction && (
+                  <button
+                    onClick={step.viewAction}
+                    className="w-full px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1 transition-all duration-200 bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-md"
+                  >
+                    <span>{step.viewText}</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
+                <button
+                  onClick={step.ctaAction}
+                  disabled={isLocked || !masterSwitchEnabled}
+                  className={`w-full px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1 transition-all duration-200 ${
+                    isLocked || !masterSwitchEnabled
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : isCompleted
+                      ? 'bg-olive-600 text-white hover:bg-olive-700 hover:shadow-md hover:scale-102'
+                      : 'bg-olive-600 text-white hover:bg-olive-700 hover:shadow-md hover:scale-102'
+                  }`}
+                  title={!masterSwitchEnabled ? 'Master switch must be enabled' : undefined}
+                >
+                  <span>{step.ctaText}</span>
+                  {!isLocked && masterSwitchEnabled && <ArrowRight className="w-3 h-3" />}
+                </button>
+              </div>
             </div>
           )
         })}

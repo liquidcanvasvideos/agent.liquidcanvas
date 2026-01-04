@@ -22,6 +22,8 @@ interface StepCard {
   count: number
   ctaText: string
   ctaAction: () => void
+  viewText?: string  // Optional "View" button text (e.g., "View Profiles", "View Drafts", "View Sent")
+  viewAction?: () => void  // Optional "View" button action (navigates to tab)
 }
 
 type Platform = 'all' | 'linkedin' | 'instagram' | 'facebook' | 'tiktok'
@@ -273,8 +275,7 @@ export default function SocialPipeline() {
       status: status.discovered === 0 ? 'locked' :
               status.reviewed > 0 ? 'completed' : 'active',
       count: status.reviewed,
-      ctaText: status.discovered === 0 ? 'Discover Profiles First' :
-               status.reviewed > 0 ? 'View Reviewed' : 'Review Profiles',
+      ctaText: status.discovered === 0 ? 'Discover Profiles First' : 'Review Profiles',
       ctaAction: () => {
         if (status.discovered === 0) {
           const event = new CustomEvent('change-tab', { detail: 'discover' })
@@ -283,7 +284,12 @@ export default function SocialPipeline() {
         }
         const event = new CustomEvent('change-tab', { detail: 'profiles' })
         window.dispatchEvent(event)
-      }
+      },
+      viewText: status.reviewed > 0 ? 'View Reviewed' : undefined,
+      viewAction: status.reviewed > 0 ? () => {
+        const event = new CustomEvent('change-tab', { detail: 'profiles' })
+        window.dispatchEvent(event)
+      } : undefined
     },
     {
       id: 3,
@@ -293,15 +299,19 @@ export default function SocialPipeline() {
       status: status.qualified === 0 ? 'locked' :
               status.drafted > 0 ? 'completed' : 'active',
       count: status.drafted,
-      ctaText: status.qualified === 0 ? 'Review Profiles First' :
-               status.drafted > 0 ? 'View Drafts' : 'Start Drafting',
+      ctaText: status.qualified === 0 ? 'Review Profiles First' : 'Start Drafting',
       ctaAction: () => {
         if (status.qualified === 0) {
           alert('Please review and qualify profiles first')
           return
         }
         handleDraft()
-      }
+      },
+      viewText: status.drafted > 0 ? 'View Drafts' : undefined,
+      viewAction: status.drafted > 0 ? () => {
+        const event = new CustomEvent('change-tab', { detail: 'drafts' })
+        window.dispatchEvent(event)
+      } : undefined
     },
     {
       id: 4,
@@ -311,15 +321,19 @@ export default function SocialPipeline() {
       status: status.drafted === 0 ? 'locked' :
               status.sent > 0 ? 'completed' : 'active',
       count: status.sent,
-      ctaText: status.drafted === 0 ? 'Create Drafts First' :
-               status.sent > 0 ? 'View Sent' : 'Start Sending',
+      ctaText: status.drafted === 0 ? 'Create Drafts First' : 'Start Sending',
       ctaAction: () => {
         if (status.drafted === 0) {
           alert('Please create drafts first')
           return
         }
         handleSend()
-      }
+      },
+      viewText: status.sent > 0 ? 'View Sent' : undefined,
+      viewAction: status.sent > 0 ? () => {
+        const event = new CustomEvent('change-tab', { detail: 'sent' })
+        window.dispatchEvent(event)
+      } : undefined
     },
     {
       id: 5,

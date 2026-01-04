@@ -68,7 +68,21 @@ export default function SocialPage() {
   useEffect(() => {
     loadData()
     const interval = setInterval(loadData, 30000) // Refresh every 30 seconds
-    return () => clearInterval(interval)
+    
+    // Listen for tab change events from SocialPipeline component
+    const handleTabChange = (e: CustomEvent) => {
+      const tabId = e.detail as string
+      if (tabId && ['overview', 'pipeline', 'discover', 'profiles', 'drafts', 'sent'].includes(tabId)) {
+        setActiveTab(tabId as any)
+      }
+    }
+    
+    window.addEventListener('change-tab', handleTabChange as EventListener)
+    
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('change-tab', handleTabChange as EventListener)
+    }
   }, [])
 
   const refreshData = () => {

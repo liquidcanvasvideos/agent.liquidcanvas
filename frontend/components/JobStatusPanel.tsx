@@ -79,11 +79,13 @@ export default function JobStatusPanel({ jobs, expanded = false, onRefresh }: Jo
   }
 
   const renderDiscoveryJobDetails = (job: Job) => {
-    if (job.job_type !== 'discover' || !job.result) return null
+    // Support both website discovery ('discover') and social discovery ('social_discover')
+    if ((job.job_type !== 'discover' && job.job_type !== 'social_discover') || !job.result) return null
 
     const result = job.result as any
-    const stats = result.search_statistics
+    const stats = result.search_statistics || result
     const queries = Array.isArray(result.queries_detail) ? result.queries_detail : []
+    const isSocial = job.job_type === 'social_discover'
 
     return (
       <div className="mt-3 space-y-3 pt-3 border-t border-gray-200">
@@ -205,7 +207,7 @@ export default function JobStatusPanel({ jobs, expanded = false, onRefresh }: Jo
         )}
 
         {/* Warning if no results */}
-        {stats && stats.total_results_found === 0 && (
+        {stats && stats.total_results_found === 0 && !isSocial && (
           <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-xl p-2 shadow-sm">
             <div className="text-xs text-yellow-800">
               <strong>⚠️ No websites found:</strong> The search queries didn&apos;t return any results from DataForSEO.
@@ -216,6 +218,46 @@ export default function JobStatusPanel({ jobs, expanded = false, onRefresh }: Jo
                 <li>All results were filtered out as duplicates or existing</li>
               </ul>
             </div>
+          </div>
+        )}
+
+        {/* Social Discovery Specific Info */}
+        {isSocial && job.params && (
+          <div className="bg-blue-50 rounded-lg p-3 space-y-2 text-xs">
+            <div className="flex items-center space-x-2 text-blue-700 font-medium mb-2">
+              <Search className="w-3 h-3" />
+              <span>Social Discovery Parameters</span>
+            </div>
+            {job.params.platform && (
+              <div>
+                <span className="text-gray-600">Platform:</span>
+                <span className="ml-1 font-medium capitalize">{job.params.platform}</span>
+              </div>
+            )}
+            {job.params.categories && job.params.categories.length > 0 && (
+              <div>
+                <span className="text-gray-600">Categories:</span>
+                <span className="ml-1 font-medium">{job.params.categories.join(', ')}</span>
+              </div>
+            )}
+            {job.params.locations && job.params.locations.length > 0 && (
+              <div>
+                <span className="text-gray-600">Locations:</span>
+                <span className="ml-1 font-medium">{job.params.locations.join(', ')}</span>
+              </div>
+            )}
+            {job.params.keywords && job.params.keywords.length > 0 && (
+              <div>
+                <span className="text-gray-600">Keywords:</span>
+                <span className="ml-1 font-medium">{job.params.keywords.join(', ')}</span>
+              </div>
+            )}
+            {result.prospects_count !== undefined && (
+              <div>
+                <span className="text-gray-600">Profiles Discovered:</span>
+                <span className="ml-1 font-medium text-green-700">{result.prospects_count || 0}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -280,7 +322,7 @@ export default function JobStatusPanel({ jobs, expanded = false, onRefresh }: Jo
                   <p className="text-sm text-red-600 mt-2">{job.error_message}</p>
                 )}
                 {isExpanded && renderDiscoveryJobDetails(job)}
-                {!isExpanded && job.result && job.job_type === 'discover' && (
+                {!isExpanded && job.result && (job.job_type === 'discover' || job.job_type === 'social_discover') && (
                   <button
                     onClick={() => toggleJob(job.id)}
                     className="text-xs text-blue-600 hover:text-blue-800 mt-2"

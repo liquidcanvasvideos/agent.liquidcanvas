@@ -25,7 +25,7 @@ interface Tab {
 
 interface SidebarProps {
   activeTab: string
-  onTabChange: (tab: 'overview' | 'leads' | 'scraped_emails' | 'emails' | 'jobs' | 'websites' | 'settings' | 'guide') => void
+  onTabChange: (tab: string) => void
   tabs: Tab[]
 }
 
@@ -89,7 +89,7 @@ export default function Sidebar({ activeTab, onTabChange, tabs }: SidebarProps) 
                     router.push(tab.route)
                   } else {
                     // Otherwise, use the normal tab change
-                    onTabChange(tab.id as 'overview' | 'leads' | 'scraped_emails' | 'emails' | 'jobs' | 'websites' | 'settings' | 'guide')
+                    onTabChange(tab.id)
                   }
                   setMobileMenuOpen(false) // Close mobile menu when tab is selected
                 }}

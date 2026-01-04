@@ -1490,6 +1490,11 @@ export interface SocialProfile {
   discovery_status: string
   outreach_status: string
   created_at: string
+  draft_subject?: string
+  draft_body?: string
+  last_sent?: string
+  followups_sent?: number
+  updated_at?: string
 }
 
 export interface SocialProfileListResponse {
@@ -1565,6 +1570,45 @@ export async function createSocialFollowups(request: { profile_ids: string[] }):
   return await res.json()
 }
 
+// SOCIAL STATS API
+export interface SocialStats {
+  total_profiles: number
+  discovered: number
+  drafted: number
+  sent: number
+  pending: number
+  jobs_running: number
+  linkedin_total: number
+  linkedin_discovered: number
+  linkedin_drafted: number
+  linkedin_sent: number
+  instagram_total: number
+  instagram_discovered: number
+  instagram_drafted: number
+  instagram_sent: number
+  facebook_total: number
+  facebook_discovered: number
+  facebook_drafted: number
+  facebook_sent: number
+  tiktok_total: number
+  tiktok_discovered: number
+  tiktok_drafted: number
+  tiktok_sent: number
+}
+
+export async function getSocialStats(): Promise<SocialStats | null> {
+  try {
+    const res = await authenticatedFetch(`${API_BASE}/social/stats`)
+    if (!res.ok) {
+      return null
+    }
+    return res.json()
+  } catch (error) {
+    console.error('Failed to get social stats:', error)
+    return null
+  }
+}
+
 // SOCIAL PIPELINE API (New pipeline endpoints)
 export interface SocialPipelineStatus {
   discovered: number
@@ -1577,8 +1621,11 @@ export interface SocialPipelineStatus {
   reason?: string
 }
 
-export async function getSocialPipelineStatus(): Promise<SocialPipelineStatus> {
-  const res = await authenticatedFetch(`${API_BASE}/social/pipeline/status`)
+export async function getSocialPipelineStatus(platform?: 'linkedin' | 'instagram' | 'facebook' | 'tiktok'): Promise<SocialPipelineStatus> {
+  const url = platform 
+    ? `${API_BASE}/social/pipeline/status?platform=${platform}`
+    : `${API_BASE}/social/pipeline/status`
+  const res = await authenticatedFetch(url)
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: 'Failed to get social pipeline status' }))
     throw new Error(error.detail || 'Failed to get social pipeline status')
@@ -1653,4 +1700,167 @@ export async function createSocialFollowupsPipeline(profile_ids: string[]): Prom
     throw new Error(error.detail || 'Failed to create followups')
   }
   return res.json()
+}
+
+// List drafted social profiles
+export async function listSocialDrafts(
+  skip: number = 0,
+  limit: number = 50,
+  platform?: string
+): Promise<SocialProfileListResponse> {
+  const params = new URLSearchParams({ skip: skip.toString(), limit: limit.toString() })
+  if (platform) params.append('platform', platform)
+  
+  const res = await authenticatedFetch(`${API_BASE}/social/drafts?${params.toString()}`)
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to list social drafts' }))
+    throw new Error(error.detail || 'Failed to list social drafts')
+  }
+  return await res.json()
+}
+
+// List sent social profiles
+export async function listSocialSent(
+  skip: number = 0,
+  limit: number = 50,
+  platform?: string
+): Promise<SocialProfileListResponse> {
+  const params = new URLSearchParams({ skip: skip.toString(), limit: limit.toString() })
+  if (platform) params.append('platform', platform)
+  
+  const res = await authenticatedFetch(`${API_BASE}/social/sent?${params.toString()}`)
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to list sent social messages' }))
+    throw new Error(error.detail || 'Failed to list sent social messages')
+  }
+  return await res.json()
+}
+
+// CSV Export functions
+export async function exportProspectsCSV(status?: string, sourceType?: string): Promise<Blob> {
+  const params = new URLSearchParams()
+  if (status) params.append('status', status)
+  if (sourceType) params.append('source_type', sourceType)
+  
+  const token = getAuthToken()
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${token}`,
+  }
+  
+  const res = await fetch(`${API_BASE}/prospects/export/csv?${params.toString()}`, { headers })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to export CSV' }))
+    throw new Error(error.detail || 'Failed to export CSV')
+  }
+  return await res.blob()
+}
+
+export async function exportLeadsCSV(): Promise<Blob> {
+  const token = getAuthToken()
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${token}`,
+  }
+  
+  const res = await fetch(`${API_BASE}/prospects/leads/export/csv`, { headers })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to export leads CSV' }))
+    throw new Error(error.detail || 'Failed to export leads CSV')
+  }
+  return await res.blob()
+}
+
+export async function exportScrapedEmailsCSV(): Promise<Blob> {
+  const token = getAuthToken()
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${token}`,
+  }
+  
+  const res = await fetch(`${API_BASE}/prospects/scraped-emails/export/csv`, { headers })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to export scraped emails CSV' }))
+    throw new Error(error.detail || 'Failed to export scraped emails CSV')
+  }
+  return await res.blob()
+}
+
+export async function exportSocialProfilesCSV(platform?: string): Promise<Blob> {
+  const params = new URLSearchParams()
+  if (platform) params.append('platform', platform)
+  
+  const token = getAuthToken()
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${token}`,
+  }
+  
+  const res = await fetch(`${API_BASE}/social/profiles/export/csv?${params.toString()}`, { headers })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to export social profiles CSV' }))
+    throw new Error(error.detail || 'Failed to export social profiles CSV')
+  }
+  return await res.blob()
+}
+
+export async function exportSocialDraftsCSV(platform?: string): Promise<Blob> {
+  const params = new URLSearchParams()
+  if (platform) params.append('platform', platform)
+  
+  const token = getAuthToken()
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${token}`,
+  }
+  
+  const res = await fetch(`${API_BASE}/social/drafts/export/csv?${params.toString()}`, { headers })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to export social drafts CSV' }))
+    throw new Error(error.detail || 'Failed to export social drafts CSV')
+  }
+  return await res.blob()
+}
+
+export async function exportSocialSentCSV(platform?: string): Promise<Blob> {
+  const params = new URLSearchParams()
+  if (platform) params.append('platform', platform)
+  
+  const token = getAuthToken()
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${token}`,
+  }
+  
+  const res = await fetch(`${API_BASE}/social/sent/export/csv?${params.toString()}`, { headers })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to export sent social messages CSV' }))
+    throw new Error(error.detail || 'Failed to export sent social messages CSV')
+  }
+  return await res.blob()
+}
+
+// Gemini Chat API
+export interface GeminiChatRequest {
+  prospect_id: string
+  message: string
+  current_subject?: string
+  current_body?: string
+}
+
+export interface GeminiChatResponse {
+  success: boolean
+  response: string
+  suggested_subject?: string
+  suggested_body?: string
+}
+
+export async function geminiChat(request: GeminiChatRequest): Promise<GeminiChatResponse> {
+  const res = await authenticatedFetch(`${API_BASE}/prospects/${request.prospect_id}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: request.message,
+      current_subject: request.current_subject,
+      current_body: request.current_body
+    }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to chat with Gemini' }))
+    throw new Error(error.detail || 'Failed to chat with Gemini')
+  }
+  return await res.json()
 }

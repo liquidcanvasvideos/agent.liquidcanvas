@@ -4,13 +4,16 @@ Social Media Outreach API
 REUSES Website Outreach tables - filters by source_type='social'.
 All queries filter: Prospect.source_type == 'social'
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from typing import List, Optional
 from uuid import UUID
 import logging
 from pydantic import BaseModel
+import csv
+import io
+from datetime import datetime
 
 from app.db.database import get_db
 from app.api.auth import get_current_user_optional
@@ -654,3 +657,483 @@ async def create_followups(
         drafts_created=0,  # Will be updated by task
         message=f"Follow-up drafting job started for {len(request.profile_ids)} profiles"
     )
+
+
+# ============================================
+# DRAFTED PROFILES
+# ============================================
+
+@router.get("/drafts")
+async def list_drafted_profiles(
+    skip: int = 0,
+    limit: int = 50,
+    platform: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """
+    List drafted social profiles.
+    
+    REUSES prospects table - filters by source_type='social' AND draft_status='drafted'.
+    """
+    try:
+        # Check if source_type column exists
+        column_exists = False
+        try:
+            from sqlalchemy import text
+            column_check = await db.execute(
+                text("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'prospects' 
+                    AND column_name = 'source_type'
+                """)
+            )
+            column_exists = column_check.fetchone() is not None
+        except Exception:
+            column_exists = False
+        
+        if not column_exists:
+            return {
+                "data": [],
+                "total": 0,
+                "skip": skip,
+                "limit": limit,
+                "status": "inactive",
+                "message": "Social outreach columns not initialized"
+            }
+        
+        # Base filter: social AND drafted
+        query = select(Prospect).where(
+            and_(
+                Prospect.source_type == 'social',
+                Prospect.draft_status == 'drafted',
+                Prospect.draft_subject.isnot(None),
+                Prospect.draft_body.isnot(None)
+            )
+        )
+        count_query = select(func.count(Prospect.id)).where(
+            and_(
+                Prospect.source_type == 'social',
+                Prospect.draft_status == 'drafted',
+                Prospect.draft_subject.isnot(None),
+                Prospect.draft_body.isnot(None)
+            )
+        )
+        
+        if platform:
+            platform_lower = platform.lower()
+            query = query.where(Prospect.source_platform == platform_lower)
+            count_query = count_query.where(Prospect.source_platform == platform_lower)
+        
+        # Get total count
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        
+        # Get paginated results
+        query = query.order_by(Prospect.created_at.desc()).offset(skip).limit(limit)
+        result = await db.execute(query)
+        prospects = result.scalars().all()
+        
+        return {
+            "data": [
+                {
+                    "id": str(p.id),
+                    "platform": p.source_platform or "",
+                    "username": p.username or "",
+                    "full_name": p.display_name or "",
+                    "profile_url": p.profile_url or "",
+                    "bio": p.page_title or "",
+                    "followers_count": p.follower_count or 0,
+                    "location": p.discovery_location or "",
+                    "category": p.discovery_category or "",
+                    "engagement_score": float(p.engagement_rate) if p.engagement_rate else 0.0,
+                    "draft_subject": p.draft_subject or "",
+                    "draft_body": p.draft_body or "",
+                    "created_at": p.created_at.isoformat() if p.created_at else None,
+                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                }
+                for p in prospects
+            ],
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "status": "active"
+        }
+    except Exception as e:
+        logger.error(f"❌ [SOCIAL DRAFTS] Error listing drafted profiles: {e}", exc_info=True)
+        return {
+            "data": [],
+            "total": 0,
+            "skip": skip,
+            "limit": limit,
+            "status": "inactive",
+            "message": f"Failed to list drafted profiles: {str(e)}"
+        }
+
+
+# ============================================
+# SENT PROFILES
+# ============================================
+
+@router.get("/sent")
+async def list_sent_profiles(
+    skip: int = 0,
+    limit: int = 50,
+    platform: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """
+    List sent social profiles.
+    
+    REUSES prospects table - filters by source_type='social' AND send_status='sent'.
+    """
+    try:
+        # Check if source_type column exists
+        column_exists = False
+        try:
+            from sqlalchemy import text
+            column_check = await db.execute(
+                text("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'prospects' 
+                    AND column_name = 'source_type'
+                """)
+            )
+            column_exists = column_check.fetchone() is not None
+        except Exception:
+            column_exists = False
+        
+        if not column_exists:
+            return {
+                "data": [],
+                "total": 0,
+                "skip": skip,
+                "limit": limit,
+                "status": "inactive",
+                "message": "Social outreach columns not initialized"
+            }
+        
+        # Base filter: social AND sent
+        query = select(Prospect).where(
+            and_(
+                Prospect.source_type == 'social',
+                Prospect.send_status == 'sent'
+            )
+        )
+        count_query = select(func.count(Prospect.id)).where(
+            and_(
+                Prospect.source_type == 'social',
+                Prospect.send_status == 'sent'
+            )
+        )
+        
+        if platform:
+            platform_lower = platform.lower()
+            query = query.where(Prospect.source_platform == platform_lower)
+            count_query = count_query.where(Prospect.source_platform == platform_lower)
+        
+        # Get total count
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        
+        # Get paginated results
+        query = query.order_by(Prospect.last_sent.desc() if hasattr(Prospect, 'last_sent') else Prospect.created_at.desc()).offset(skip).limit(limit)
+        result = await db.execute(query)
+        prospects = result.scalars().all()
+        
+        return {
+            "data": [
+                {
+                    "id": str(p.id),
+                    "platform": p.source_platform or "",
+                    "username": p.username or "",
+                    "full_name": p.display_name or "",
+                    "profile_url": p.profile_url or "",
+                    "bio": p.page_title or "",
+                    "followers_count": p.follower_count or 0,
+                    "location": p.discovery_location or "",
+                    "category": p.discovery_category or "",
+                    "engagement_score": float(p.engagement_rate) if p.engagement_rate else 0.0,
+                    "draft_subject": getattr(p, 'draft_subject', None) or "",
+                    "draft_body": getattr(p, 'draft_body', None) or "",
+                    "last_sent": p.last_sent.isoformat() if getattr(p, 'last_sent', None) else None,
+                    "followups_sent": getattr(p, 'followups_sent', 0) or 0,
+                    "created_at": p.created_at.isoformat() if p.created_at else None,
+                }
+                for p in prospects
+            ],
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "status": "active"
+        }
+    except Exception as e:
+        logger.error(f"❌ [SOCIAL SENT] Error listing sent profiles: {e}", exc_info=True)
+        return {
+            "data": [],
+            "total": 0,
+            "skip": skip,
+            "limit": limit,
+                "status": "inactive",
+                "message": f"Failed to list sent profiles: {str(e)}"
+            }
+
+
+# ============================================
+# CSV EXPORT
+# ============================================
+
+@router.get("/profiles/export/csv")
+async def export_profiles_csv(
+    platform: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """
+    Export social profiles to CSV.
+    
+    Query params:
+    - platform: Filter by platform (linkedin, instagram, facebook, tiktok)
+    
+    Returns CSV file with all matching profiles (no pagination limit).
+    """
+    try:
+        # Check if source_type column exists
+        column_exists = False
+        try:
+            from sqlalchemy import text
+            column_check = await db.execute(
+                text("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'prospects' 
+                    AND column_name = 'source_type'
+                """)
+            )
+            column_exists = column_check.fetchone() is not None
+        except Exception:
+            column_exists = False
+        
+        if not column_exists:
+            raise HTTPException(status_code=400, detail="Social outreach columns not initialized")
+        
+        query = select(Prospect).where(Prospect.source_type == 'social')
+        
+        if platform:
+            platform_lower = platform.lower()
+            query = query.where(Prospect.source_platform == platform_lower)
+        
+        result = await db.execute(query.order_by(Prospect.created_at.desc()))
+        prospects = result.scalars().all()
+        
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        writer.writerow([
+            'ID', 'Platform', 'Username', 'Display Name', 'Profile URL',
+            'Bio', 'Followers', 'Location', 'Category', 'Engagement Rate',
+            'Discovery Status', 'Outreach Status', 'Created At'
+        ])
+        
+        for p in prospects:
+            writer.writerow([
+                str(p.id),
+                p.source_platform or '',
+                p.username or '',
+                p.display_name or '',
+                p.profile_url or '',
+                p.page_title or '',
+                p.follower_count or 0,
+                p.discovery_location or '',
+                p.discovery_category or '',
+                float(p.engagement_rate) if p.engagement_rate else 0,
+                p.discovery_status or 'DISCOVERED',
+                p.outreach_status or 'pending',
+                p.created_at.isoformat() if p.created_at else ''
+            ])
+        
+        csv_content = output.getvalue()
+        output.close()
+        
+        filename = f"social_profiles_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [CSV EXPORT PROFILES] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to export profiles CSV: {str(e)}")
+
+
+@router.get("/drafts/export/csv")
+async def export_drafts_csv(
+    platform: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """
+    Export drafted social profiles to CSV.
+    """
+    try:
+        column_exists = False
+        try:
+            from sqlalchemy import text
+            column_check = await db.execute(
+                text("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'prospects' 
+                    AND column_name = 'source_type'
+                """)
+            )
+            column_exists = column_check.fetchone() is not None
+        except Exception:
+            column_exists = False
+        
+        if not column_exists:
+            raise HTTPException(status_code=400, detail="Social outreach columns not initialized")
+        
+        query = select(Prospect).where(
+            and_(
+                Prospect.source_type == 'social',
+                Prospect.draft_status == 'drafted',
+                Prospect.draft_subject.isnot(None),
+                Prospect.draft_body.isnot(None)
+            )
+        )
+        
+        if platform:
+            query = query.where(Prospect.source_platform == platform.lower())
+        
+        result = await db.execute(query.order_by(Prospect.created_at.desc()))
+        prospects = result.scalars().all()
+        
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        writer.writerow([
+            'ID', 'Platform', 'Username', 'Display Name', 'Profile URL',
+            'Draft Subject', 'Draft Body', 'Created At', 'Updated At'
+        ])
+        
+        for p in prospects:
+            writer.writerow([
+                str(p.id),
+                p.source_platform or '',
+                p.username or '',
+                p.display_name or '',
+                p.profile_url or '',
+                p.draft_subject or '',
+                p.draft_body or '',
+                p.created_at.isoformat() if p.created_at else '',
+                p.updated_at.isoformat() if p.updated_at else ''
+            ])
+        
+        csv_content = output.getvalue()
+        output.close()
+        
+        filename = f"social_drafts_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [CSV EXPORT DRAFTS] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to export drafts CSV: {str(e)}")
+
+
+@router.get("/sent/export/csv")
+async def export_sent_csv(
+    platform: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """
+    Export sent social profiles to CSV.
+    """
+    try:
+        column_exists = False
+        try:
+            from sqlalchemy import text
+            column_check = await db.execute(
+                text("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'prospects' 
+                    AND column_name = 'source_type'
+                """)
+            )
+            column_exists = column_check.fetchone() is not None
+        except Exception:
+            column_exists = False
+        
+        if not column_exists:
+            raise HTTPException(status_code=400, detail="Social outreach columns not initialized")
+        
+        query = select(Prospect).where(
+            and_(
+                Prospect.source_type == 'social',
+                Prospect.send_status == 'sent'
+            )
+        )
+        
+        if platform:
+            query = query.where(Prospect.source_platform == platform.lower())
+        
+        result = await db.execute(query.order_by(Prospect.last_sent.desc() if hasattr(Prospect, 'last_sent') else Prospect.created_at.desc()))
+        prospects = result.scalars().all()
+        
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        writer.writerow([
+            'ID', 'Platform', 'Username', 'Display Name', 'Profile URL',
+            'Draft Subject', 'Draft Body', 'Last Sent', 'Follow-ups Sent', 'Created At'
+        ])
+        
+        for p in prospects:
+            writer.writerow([
+                str(p.id),
+                p.source_platform or '',
+                p.username or '',
+                p.display_name or '',
+                p.profile_url or '',
+                getattr(p, 'draft_subject', None) or '',
+                getattr(p, 'draft_body', None) or '',
+                p.last_sent.isoformat() if getattr(p, 'last_sent', None) else '',
+                getattr(p, 'followups_sent', 0) or 0,
+                p.created_at.isoformat() if p.created_at else ''
+            ])
+        
+        csv_content = output.getvalue()
+        output.close()
+        
+        filename = f"social_sent_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [CSV EXPORT SENT] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to export sent CSV: {str(e)}")

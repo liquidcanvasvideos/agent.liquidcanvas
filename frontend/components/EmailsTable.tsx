@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Mail, CheckCircle, XCircle, Clock, RefreshCw, X, Loader2, Users } from 'lucide-react'
-import { listProspects, updateProspectCategory, autoCategorizeAll, type Prospect } from '@/lib/api'
+import { Mail, CheckCircle, XCircle, Clock, RefreshCw, X, Loader2, Users, Download } from 'lucide-react'
+import { listProspects, updateProspectCategory, autoCategorizeAll, exportProspectsCSV, type Prospect } from '@/lib/api'
 
 export default function EmailsTable() {
   const [prospects, setProspects] = useState<Prospect[]>([])
@@ -208,6 +208,27 @@ export default function EmailsTable() {
                 Auto-Categorize All
               </>
             )}
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const blob = await exportProspectsCSV('sent', 'website')
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `sent_emails_${new Date().toISOString().split('T')[0]}.csv`
+                document.body.appendChild(a)
+                a.click()
+                window.URL.revokeObjectURL(url)
+                document.body.removeChild(a)
+              } catch (error: any) {
+                alert(`Failed to export CSV: ${error.message}`)
+              }
+            }}
+            className="flex items-center space-x-1 px-2 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs font-medium"
+          >
+            <Download className="w-3 h-3" />
+            <span>Download CSV</span>
           </button>
           <button
             onClick={loadSentEmails}

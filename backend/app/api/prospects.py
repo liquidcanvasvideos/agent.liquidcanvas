@@ -1,7 +1,7 @@
 """
 Prospect management API endpoints
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_
 from typing import List, Optional, Dict
@@ -9,6 +9,9 @@ from uuid import UUID
 import os
 from dotenv import load_dotenv
 import logging
+import csv
+import io
+from datetime import datetime
 
 from app.db.database import get_db
 from app.api.auth import get_current_user_optional
@@ -25,6 +28,7 @@ from app.schemas.prospect import (
     SendRequest,
     SendResponse
 )
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -1638,3 +1642,334 @@ async def send_email(
         success=True,
         message_id=send_result.get("message_id")
     )
+
+
+# ============================================
+# CSV EXPORT
+# ============================================
+
+@router.get("/export/csv")
+async def export_prospects_csv(
+    status: Optional[str] = None,
+    source_type: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """
+    Export prospects to CSV.
+    
+    Query params:
+    - status: Filter by outreach_status (e.g., 'sent', 'drafted')
+    - source_type: Filter by source_type ('website' or 'social')
+    
+    Returns CSV file with all matching prospects (no pagination limit).
+    """
+    try:
+        query = select(Prospect)
+        
+        # Apply filters
+        if status:
+            query = query.where(Prospect.outreach_status == status)
+        if source_type:
+            query = query.where(Prospect.source_type == source_type)
+        else:
+            # Default to website if not specified
+            query = query.where(or_(
+                Prospect.source_type == 'website',
+                Prospect.source_type.is_(None)
+            ))
+        
+        # Get all results (no pagination for export)
+        result = await db.execute(query.order_by(Prospect.created_at.desc()))
+        prospects = result.scalars().all()
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            'ID', 'Domain', 'Page URL', 'Page Title', 'Contact Email',
+            'Category', 'Location', 'Score', 'Status', 'Draft Subject',
+            'Draft Body', 'Last Sent', 'Follow-ups Sent', 'Created At'
+        ])
+        
+        # Write rows
+        for p in prospects:
+            writer.writerow([
+                str(p.id),
+                p.domain or '',
+                p.page_url or '',
+                p.page_title or '',
+                p.contact_email or '',
+                p.discovery_category or '',
+                p.discovery_location or '',
+                p.score or 0,
+                p.outreach_status or 'pending',
+                getattr(p, 'draft_subject', None) or '',
+                getattr(p, 'draft_body', None) or '',
+                p.last_sent.isoformat() if getattr(p, 'last_sent', None) else '',
+                getattr(p, 'followups_sent', 0) or 0,
+                p.created_at.isoformat() if p.created_at else ''
+            ])
+        
+        # Return CSV as response
+        csv_content = output.getvalue()
+        output.close()
+        
+        filename = f"prospects_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ [CSV EXPORT] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to export CSV: {str(e)}")
+
+
+@router.get("/leads/export/csv")
+async def export_leads_csv(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """
+    Export leads (scraped emails) to CSV.
+    
+    Returns CSV file with all leads (website outreach only).
+    """
+    try:
+        from app.models.prospect import ScrapeStatus
+        
+        website_filter = or_(
+            Prospect.source_type == 'website',
+            Prospect.source_type.is_(None)
+        )
+        
+        query = select(Prospect).where(
+            and_(
+                Prospect.scrape_status.in_([
+                    ScrapeStatus.SCRAPED.value,
+                    ScrapeStatus.ENRICHED.value
+                ]),
+                website_filter
+            )
+        )
+        
+        result = await db.execute(query.order_by(Prospect.created_at.desc()))
+        prospects = result.scalars().all()
+        
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        writer.writerow([
+            'ID', 'Domain', 'Contact Email', 'Category', 'Location',
+            'Score', 'Verification Status', 'Draft Subject', 'Created At'
+        ])
+        
+        for p in prospects:
+            writer.writerow([
+                str(p.id),
+                p.domain or '',
+                p.contact_email or '',
+                p.discovery_category or '',
+                p.discovery_location or '',
+                p.score or 0,
+                p.verification_status or '',
+                getattr(p, 'draft_subject', None) or '',
+                p.created_at.isoformat() if p.created_at else ''
+            ])
+        
+        csv_content = output.getvalue()
+        output.close()
+        
+        filename = f"leads_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ [CSV EXPORT LEADS] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to export leads CSV: {str(e)}")
+
+
+@router.get("/scraped-emails/export/csv")
+async def export_scraped_emails_csv(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """
+    Export scraped emails to CSV.
+    
+    Returns CSV file with all scraped emails (website outreach only).
+    """
+    try:
+        from app.models.prospect import ScrapeStatus
+        
+        website_filter = or_(
+            Prospect.source_type == 'website',
+            Prospect.source_type.is_(None)
+        )
+        
+        query = select(Prospect).where(
+            and_(
+                Prospect.scrape_status.in_([
+                    ScrapeStatus.SCRAPED.value,
+                    ScrapeStatus.ENRICHED.value
+                ]),
+                Prospect.contact_email.isnot(None),
+                website_filter
+            )
+        )
+        
+        result = await db.execute(query.order_by(Prospect.created_at.desc()))
+        prospects = result.scalars().all()
+        
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        writer.writerow([
+            'ID', 'Domain', 'Contact Email', 'Source', 'Category',
+            'Verification Status', 'Confidence', 'Created At'
+        ])
+        
+        for p in prospects:
+            writer.writerow([
+                str(p.id),
+                p.domain or '',
+                p.contact_email or '',
+                p.scrape_source_url or 'Snov.io',
+                p.discovery_category or '',
+                p.verification_status or '',
+                float(p.verification_confidence) if p.verification_confidence else 0,
+                p.created_at.isoformat() if p.created_at else ''
+            ])
+        
+        csv_content = output.getvalue()
+        output.close()
+        
+        filename = f"scraped_emails_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ [CSV EXPORT SCRAPED EMAILS] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to export scraped emails CSV: {str(e)}")
+
+
+# ============================================
+# GEMINI CHAT
+# ============================================
+
+class GeminiChatRequest(BaseModel):
+    prospect_id: UUID
+    message: str
+    current_subject: Optional[str] = None
+    current_body: Optional[str] = None
+
+
+class GeminiChatResponse(BaseModel):
+    success: bool
+    response: str
+    suggested_subject: Optional[str] = None
+    suggested_body: Optional[str] = None
+
+
+@router.post("/{prospect_id}/chat", response_model=GeminiChatResponse)
+async def gemini_chat(
+    prospect_id: UUID,
+    request: GeminiChatRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[str] = Depends(get_current_user_optional)
+):
+    """
+    Chat with Gemini to refine email drafts.
+    
+    This is a human-in-the-loop feature - Gemini provides suggestions,
+    but the user must manually copy/paste into the draft editor.
+    """
+    try:
+        result = await db.execute(select(Prospect).where(Prospect.id == prospect_id))
+        prospect = result.scalar_one_or_none()
+        
+        if not prospect:
+            raise HTTPException(status_code=404, detail="Prospect not found")
+        
+        from app.clients.gemini import GeminiClient
+        
+        try:
+            gemini_client = GeminiClient()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Gemini not configured: {e}")
+        
+        # Build context for Gemini
+        context = f"""You are helping refine an outreach email draft for Liquid Canvas (liquidcanvas.art).
+
+PROSPECT INFORMATION:
+- Domain: {prospect.domain}
+- Website Title: {prospect.page_title or 'Unknown'}
+- Website URL: {prospect.page_url or 'N/A'}
+- Category: {prospect.discovery_category or 'Unknown'}
+
+CURRENT DRAFT:
+Subject: {request.current_subject or '(not set)'}
+Body: {request.current_body or '(empty)'}
+
+USER REQUEST:
+{request.message}
+
+Provide helpful suggestions to refine the email. You can:
+- Suggest alternative phrasing
+- Improve clarity or tone
+- Add personalization
+- Refine the call-to-action
+- Make it more engaging
+
+Return a conversational response with your suggestions. If you want to suggest specific text, include it clearly marked."""
+        
+        url = f"{gemini_client.BASE_URL}/models/gemini-2.0-flash-exp:generateContent?key={gemini_client.api_key}"
+        
+        payload = {
+            "contents": [{"parts": [{"text": context}]}],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 1024
+            }
+        }
+        
+        import httpx
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get("candidates") and len(result["candidates"]) > 0:
+                candidate = result["candidates"][0]
+                if candidate.get("content") and candidate["content"].get("parts"):
+                    parts = candidate["content"]["parts"]
+                    if parts and isinstance(parts, list) and len(parts) > 0:
+                        text_content = parts[0].get("text", "") if isinstance(parts[0], dict) else ""
+                        
+                        return GeminiChatResponse(
+                            success=True,
+                            response=text_content
+                        )
+        
+        raise HTTPException(status_code=500, detail="Failed to get response from Gemini")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [GEMINI CHAT] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to chat with Gemini: {str(e)}")

@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Mail, ExternalLink, RefreshCw, Send, X, Loader2, Users, Globe, CheckCircle, Eye, Edit2 } from 'lucide-react'
-import { listLeads, listScrapedEmails, promoteToLead, composeEmail, sendEmail, manualScrape, manualVerify, updateProspectCategory, autoCategorizeAll, type Prospect } from '@/lib/api'
+import { Mail, ExternalLink, RefreshCw, Send, X, Loader2, Users, Globe, CheckCircle, Eye, Edit2, Download } from 'lucide-react'
+import { listLeads, listScrapedEmails, promoteToLead, composeEmail, sendEmail, manualScrape, manualVerify, updateProspectCategory, autoCategorizeAll, exportLeadsCSV, exportScrapedEmailsCSV, type Prospect } from '@/lib/api'
+import GeminiChatPanel from '@/components/GeminiChatPanel'
 import { safeToFixed } from '@/lib/safe-utils'
 
 interface LeadsTableProps {
@@ -899,35 +900,48 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
             </div>
 
             {/* Tab Content */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto flex">
               {activeTab === 'edit' ? (
-                <div className="p-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Subject
-                    </label>
-                    <input
-                      type="text"
-                      value={draftSubject}
-                      onChange={(e) => setDraftSubject(e.target.value)}
-                      className="w-full px-4 py-3 glass border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-liquid-500 focus:border-liquid-500 text-sm transition-all duration-200"
-                      placeholder="Email subject"
+                <>
+                  <div className="flex-1 p-4 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Subject
+                      </label>
+                      <input
+                        type="text"
+                        value={draftSubject}
+                        onChange={(e) => setDraftSubject(e.target.value)}
+                        className="w-full px-4 py-3 glass border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-liquid-500 focus:border-liquid-500 text-sm transition-all duration-200"
+                        placeholder="Email subject"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Message
+                      </label>
+                      <textarea
+                        value={draftBody}
+                        onChange={(e) => setDraftBody(e.target.value)}
+                        className="w-full px-4 py-3 glass border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-liquid-500 focus:border-liquid-500 text-sm h-64 resize-vertical transition-all duration-200"
+                        placeholder="Your email message will appear here. You can edit it before sending."
+                      />
+                    </div>
+                  </div>
+                  <div className="w-80 border-l border-gray-200">
+                    <GeminiChatPanel
+                      prospectId={activeProspect.id}
+                      currentSubject={draftSubject}
+                      currentBody={draftBody}
+                      onSuggestion={(subject, body) => {
+                        if (subject) setDraftSubject(subject)
+                        if (body) setDraftBody(body)
+                      }}
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Message
-                    </label>
-                    <textarea
-                      value={draftBody}
-                      onChange={(e) => setDraftBody(e.target.value)}
-                      className="w-full px-4 py-3 glass border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-liquid-500 focus:border-liquid-500 text-sm h-64 resize-vertical transition-all duration-200"
-                      placeholder="Your email message will appear here. You can edit it before sending."
-                    />
-                  </div>
-                </div>
+                </>
               ) : (
-                <div className="p-4">
+                <div className="flex-1 p-4">
                   {/* Email Preview - styled like Gmail */}
                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
                     {/* Email Header */}

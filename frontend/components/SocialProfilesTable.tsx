@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { RefreshCw, ExternalLink, CheckCircle, XCircle, FileText, Send, Eye } from 'lucide-react'
+import { RefreshCw, ExternalLink, CheckCircle, XCircle, FileText, Send, Eye, Download } from 'lucide-react'
 import { 
   listSocialProfiles, 
   draftSocialProfiles, 
@@ -250,6 +250,27 @@ export default function SocialProfilesTable() {
               </button>
             </>
           )}
+          <button
+            onClick={async () => {
+              try {
+                const blob = await exportSocialProfilesCSV()
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `social_profiles_${new Date().toISOString().split('T')[0]}.csv`
+                document.body.appendChild(a)
+                a.click()
+                window.URL.revokeObjectURL(url)
+                document.body.removeChild(a)
+              } catch (error: any) {
+                alert(`Failed to export CSV: ${error.message}`)
+              }
+            }}
+            className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1"
+          >
+            <Download className="w-3 h-3" />
+            Download CSV
+          </button>
           <button
             onClick={loadProfiles}
             className="px-3 py-1.5 text-xs bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-1"

@@ -90,6 +90,110 @@ Return a concise summary (2-3 sentences) about Liquid Canvas that can be used in
         # Fallback default information
         return """Liquid Canvas (liquidcanvas.art) is an art and creative services company specializing in innovative visual solutions and artistic collaborations. We offer custom creative services, digital art, and artistic partnerships for businesses and creators."""
     
+    async def _fetch_website_content(self, page_url: Optional[str], domain: str) -> Optional[str]:
+        """
+        Fetch and extract main content from a website URL.
+        
+        Returns:
+            Extracted text content from the website, or None if fetch fails
+        """
+        if not page_url:
+            # Try homepage
+            page_url = f"https://{domain}"
+        
+        try:
+            import httpx
+            from bs4 import BeautifulSoup
+            
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                response = await client.get(page_url, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                })
+                response.raise_for_status()
+                html = response.text
+                
+                # Parse HTML and extract main content
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # Remove script and style elements
+                for script in soup(["script", "style", "nav", "footer", "header"]):
+                    script.decompose()
+                
+                # Get text content
+                text = soup.get_text()
+                
+                # Clean up whitespace
+                lines = (line.strip() for line in text.splitlines())
+                chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                text = ' '.join(chunk for chunk in chunks if chunk)
+                
+                # Limit to first 2000 characters to avoid token limits
+                if len(text) > 2000:
+                    text = text[:2000] + "..."
+                
+                logger.info(f"✅ Fetched website content from {page_url} ({len(text)} chars)")
+                return text
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to fetch website content from {page_url}: {e}")
+            return None
+    
+    async def _build_positioning_summary(
+        self,
+        website_content: Optional[str],
+        page_title: Optional[str],
+        page_snippet: Optional[str],
+        domain: str
+    ) -> str:
+        """
+        Build an internal positioning summary using Gemini.
+        
+        This analyzes the recipient's website and determines how to position Liquid Canvas.
+        """
+        url = f"{self.BASE_URL}/models/gemini-2.0-flash-exp:generateContent?key={self.api_key}"
+        
+        analysis_prompt = f"""Analyze this website and create a positioning summary for outreach.
+
+Website Information:
+- Domain: {domain}
+- Title: {page_title or 'Unknown'}
+- Description: {page_snippet or 'Not provided'}
+- Content: {website_content[:1500] if website_content else 'Not available'}
+
+Create a brief positioning summary (2-3 sentences) that:
+1. Identifies what type of organization/business this is
+2. Notes their focus area or niche
+3. Suggests how Liquid Canvas (liquidcanvas.art) could be relevant to them
+4. Identifies the best angle for outreach
+
+Return ONLY the positioning summary text, no additional formatting."""
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, json={
+                    "contents": [{"parts": [{"text": analysis_prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.5,
+                        "maxOutputTokens": 256
+                    }
+                })
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("candidates") and len(result["candidates"]) > 0:
+                    candidate = result["candidates"][0]
+                    if candidate.get("content") and candidate["content"].get("parts"):
+                        parts = candidate["content"]["parts"]
+                        if parts and isinstance(parts, list) and len(parts) > 0:
+                            summary = parts[0].get("text", "") if isinstance(parts[0], dict) else ""
+                            if summary:
+                                logger.info("✅ Built positioning summary")
+                                return summary
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to build positioning summary: {e}")
+        
+        # Fallback summary
+        return f"This appears to be a {page_title or 'business'} in the {domain} domain. Liquid Canvas could offer creative services and artistic collaborations relevant to their needs."
+    
     async def compose_email(
         self,
         domain: str,
@@ -99,7 +203,9 @@ Return a concise summary (2-3 sentences) about Liquid Canvas that can be used in
         contact_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Compose an email using Gemini API with Liquid Canvas information
+        Compose an email using Gemini API with Liquid Canvas information.
+        
+        CRITICAL: Reads website content first, builds positioning summary, then generates email.
         
         Args:
             domain: Website domain
@@ -113,10 +219,23 @@ Return a concise summary (2-3 sentences) about Liquid Canvas that can be used in
         """
         url = f"{self.BASE_URL}/models/gemini-2.0-flash-exp:generateContent?key={self.api_key}"
         
-        # Search for Liquid Canvas information
+        # STEP 1: Search for Liquid Canvas information
         liquid_canvas_info = await self._search_liquid_canvas_info()
         
-        # Build context for the email
+        # STEP 2: Fetch website content
+        logger.info(f"📄 [GEMINI] Fetching website content for {domain}...")
+        website_content = await self._fetch_website_content(page_url, domain)
+        
+        # STEP 3: Build positioning summary
+        logger.info(f"📊 [GEMINI] Building positioning summary for {domain}...")
+        positioning_summary = await self._build_positioning_summary(
+            website_content,
+            page_title,
+            page_snippet,
+            domain
+        )
+        
+        # STEP 4: Build context for the email
         context_parts = []
         if page_title:
             context_parts.append(f"Website Title: {page_title}")
@@ -126,31 +245,37 @@ Return a concise summary (2-3 sentences) about Liquid Canvas that can be used in
             context_parts.append(f"Description: {page_snippet}")
         if page_url:
             context_parts.append(f"URL: {page_url}")
+        if website_content:
+            context_parts.append(f"Website Content Preview: {website_content[:500]}...")
         
         context = "\n".join(context_parts) if context_parts else f"Website: {domain}"
         
         # Create prompt for structured JSON output
         prompt = f"""You are a professional outreach specialist for Liquid Canvas (liquidcanvas.art), an art and creative services company.
 
-About Liquid Canvas:
+ABOUT LIQUID CANVAS (READ THIS FIRST):
 {liquid_canvas_info}
 
 Website: https://liquidcanvas.art
 
-Your task is to compose a personalized outreach email to a website owner or content creator.
+POSITIONING SUMMARY (How to approach this recipient):
+{positioning_summary}
 
-Context about their website:
+RECIPIENT'S WEBSITE CONTEXT:
 {context}
 
-Requirements:
-1. The email must be professional, friendly, and personalized
-2. It should mention something specific about their website/content
-3. It should introduce Liquid Canvas (liquidcanvas.art) and reference our services naturally
-4. Reference our website (liquidcanvas.art) where relevant and appropriate
-5. It should be concise (2-3 short paragraphs)
-6. It should include a clear call-to-action
-7. It should be warm but not overly salesy
-8. Use the information about Liquid Canvas to make the email authentic and specific
+YOUR TASK:
+Compose a personalized outreach email that:
+1. Clearly introduces Liquid Canvas (liquidcanvas.art) - mention who we are and what we do
+2. References something specific about their website/content (use the positioning summary)
+3. Positions Liquid Canvas as relevant to their organization type/niche
+4. Is professional, friendly, and personalized
+5. Is concise (2-3 short paragraphs)
+6. Includes a clear call-to-action
+7. Is warm but not overly salesy
+8. Uses the Liquid Canvas information to make the email authentic and specific
+
+CRITICAL: The email MUST clearly introduce Liquid Canvas. Do not assume they know who we are.
 
 You MUST return ONLY valid JSON with this exact structure:
 {{

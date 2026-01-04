@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ExternalLink, RefreshCw, Loader2, Globe, CheckCircle2, X, Trash2, Users } from 'lucide-react'
-import { listWebsites, pipelineApprove, updateProspectCategory, autoCategorizeAll, type Prospect } from '@/lib/api'
+import { ExternalLink, RefreshCw, Loader2, Globe, CheckCircle2, X, Trash2, Users, Download } from 'lucide-react'
+import { listWebsites, pipelineApprove, updateProspectCategory, autoCategorizeAll, exportProspectsCSV, type Prospect } from '@/lib/api'
 
 interface Website {
   id: string
@@ -324,6 +324,27 @@ export default function WebsitesTable() {
                 Auto-Categorize All
               </>
             )}
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const blob = await exportProspectsCSV(undefined, 'website')
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `websites_${new Date().toISOString().split('T')[0]}.csv`
+                document.body.appendChild(a)
+                a.click()
+                window.URL.revokeObjectURL(url)
+                document.body.removeChild(a)
+              } catch (error: any) {
+                alert(`Failed to export CSV: ${error.message}`)
+              }
+            }}
+            className="px-2 py-1 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-1 transition-all duration-200 font-medium"
+          >
+            <Download className="w-3 h-3" />
+            <span>Download CSV</span>
           </button>
           <button
             onClick={loadWebsites}

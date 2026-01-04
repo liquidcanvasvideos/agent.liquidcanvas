@@ -303,8 +303,6 @@ export default function Pipeline() {
       count: normalizedStatus.scraped,
       ctaText: normalizedStatus.scrape_ready_count === 0
         ? 'Discover Websites First'
-        : normalizedStatus.scraped > 0
-        ? 'View Prospects'
         : 'Start Scraping',
       ctaAction: () => {
         // If nothing is scrape-ready yet, guide user back to discovery
@@ -313,17 +311,14 @@ export default function Pipeline() {
           window.dispatchEvent(event)
           return
         }
-
-        // If scraping already ran, take user to leads
-        if (normalizedStatus.scraped > 0) {
-          const event = new CustomEvent('change-tab', { detail: 'leads' })
-          window.dispatchEvent(event)
-          return
-        }
-
-        // Otherwise start scraping approved websites
+        // Start scraping approved websites
         handleScrape()
-      }
+      },
+      viewText: normalizedStatus.scraped > 0 ? 'View Prospects' : undefined,
+      viewAction: normalizedStatus.scraped > 0 ? () => {
+        const event = new CustomEvent('change-tab', { detail: 'leads' })
+        window.dispatchEvent(event)
+      } : undefined
     },
     {
       id: 3,

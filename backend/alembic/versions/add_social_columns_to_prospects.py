@@ -140,7 +140,7 @@ def upgrade():
     # Add engagement_rate column
     if 'engagement_rate' not in existing_columns:
         op.add_column('prospects',
-            sa.Column('engagement_rate', sa.Float(), nullable=True)
+            sa.Column('engagement_rate', sa.Numeric(5, 2), nullable=True)
         )
         print("✅ Added engagement_rate column")
     else:

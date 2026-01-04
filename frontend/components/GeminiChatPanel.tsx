@@ -86,7 +86,7 @@ export default function GeminiChatPanel({ prospectId, currentSubject, currentBod
   const extractSuggestedText = (content: string): { subject?: string; body?: string } => {
     // Try to extract suggested subject/body from Gemini response
     const subjectMatch = content.match(/subject[:\s]+["']?([^"'\n]+)["']?/i)
-    const bodyMatch = content.match(/body[:\s]+["']?([^"']+)["']?/is)
+    const bodyMatch = content.match(/body[:\s]+["']?([\s\S]+?)["']?(?:\n|$)/i)
     
     return {
       subject: subjectMatch?.[1],

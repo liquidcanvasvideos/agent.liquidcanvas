@@ -165,32 +165,58 @@ Return a concise summary (2-3 sentences) about Liquid Canvas that can be used in
         # Get Liquid Canvas context
         liquid_canvas_info = await self._search_liquid_canvas_info()
         
-        # Fetch website content for better context
-        website_content = await self._fetch_website_content(
-            getattr(prospect, 'page_url', None),
-            getattr(prospect, 'domain', '')
-        )
+        # Build positioning summary - only for website prospects
+        source_type = getattr(prospect, 'source_type', None)
+        positioning_summary = ""
         
-        # Build positioning summary
-        positioning_summary = await self._build_positioning_summary(
-            website_content,
-            getattr(prospect, 'page_title', None),
-            getattr(prospect, 'page_snippet', None),
-            getattr(prospect, 'domain', '')
-        )
+        if source_type != 'social':
+            # Website prospect - fetch website content and build positioning summary
+            website_content = await self._fetch_website_content(
+                getattr(prospect, 'page_url', None),
+                getattr(prospect, 'domain', '')
+            )
+            positioning_summary = await self._build_positioning_summary(
+                website_content,
+                getattr(prospect, 'page_title', None),
+                getattr(prospect, 'page_snippet', None),
+                getattr(prospect, 'domain', '')
+            )
+        else:
+            # Social media profile - build simpler positioning based on platform and profile info
+            platform = getattr(prospect, 'source_platform', 'social media')
+            username = getattr(prospect, 'display_name', None) or getattr(prospect, 'username', 'Unknown')
+            positioning_summary = f"This is a {platform.title()} profile for {username}. Consider the platform's communication style ({platform.title()} messages are typically more casual and engaging than email) and tailor the message accordingly."
         
-        # Build prospect context
+        # Build prospect context - handle both website and social profiles
         prospect_info = []
-        if hasattr(prospect, 'domain') and prospect.domain:
-            prospect_info.append(f"- Domain: {prospect.domain}")
-        if hasattr(prospect, 'page_title') and prospect.page_title:
-            prospect_info.append(f"- Website Title: {prospect.page_title}")
-        if hasattr(prospect, 'page_url') and prospect.page_url:
-            prospect_info.append(f"- Website URL: {prospect.page_url}")
-        if hasattr(prospect, 'discovery_category') and prospect.discovery_category:
-            prospect_info.append(f"- Category: {prospect.discovery_category}")
+        source_type = getattr(prospect, 'source_type', None)
         
-        prospect_context = "\n".join(prospect_info) if prospect_info else "- Domain: Unknown"
+        if source_type == 'social':
+            # Social media profile
+            if hasattr(prospect, 'source_platform') and prospect.source_platform:
+                prospect_info.append(f"- Platform: {prospect.source_platform.title()}")
+            if hasattr(prospect, 'username') and prospect.username:
+                prospect_info.append(f"- Username: @{prospect.username}")
+            if hasattr(prospect, 'display_name') and prospect.display_name:
+                prospect_info.append(f"- Display Name: {prospect.display_name}")
+            if hasattr(prospect, 'profile_url') and prospect.profile_url:
+                prospect_info.append(f"- Profile URL: {prospect.profile_url}")
+            if hasattr(prospect, 'follower_count') and prospect.follower_count:
+                prospect_info.append(f"- Followers: {prospect.follower_count:,}")
+            if hasattr(prospect, 'engagement_rate') and prospect.engagement_rate:
+                prospect_info.append(f"- Engagement Rate: {prospect.engagement_rate}%")
+            prospect_context = "\n".join(prospect_info) if prospect_info else "- Platform: Unknown"
+        else:
+            # Website prospect
+            if hasattr(prospect, 'domain') and prospect.domain:
+                prospect_info.append(f"- Domain: {prospect.domain}")
+            if hasattr(prospect, 'page_title') and prospect.page_title:
+                prospect_info.append(f"- Website Title: {prospect.page_title}")
+            if hasattr(prospect, 'page_url') and prospect.page_url:
+                prospect_info.append(f"- Website URL: {prospect.page_url}")
+            if hasattr(prospect, 'discovery_category') and prospect.discovery_category:
+                prospect_info.append(f"- Category: {prospect.discovery_category}")
+            prospect_context = "\n".join(prospect_info) if prospect_info else "- Domain: Unknown"
         
         # Build current draft context
         draft_context = []
@@ -206,8 +232,16 @@ Return a concise summary (2-3 sentences) about Liquid Canvas that can be used in
         
         draft_text = "\n".join(draft_context)
         
+        # Determine message type based on source_type
+        source_type = getattr(prospect, 'source_type', None)
+        message_type = "social media message" if source_type == 'social' else "email draft"
+        platform_context = ""
+        if source_type == 'social':
+            platform = getattr(prospect, 'source_platform', 'social media')
+            platform_context = f"\nPLATFORM: {platform.title()}\nNote: Social media messages should be more casual, engaging, and platform-appropriate than email outreach."
+        
         # Build complete prompt
-        prompt = f"""You are a professional outreach specialist helping refine an email draft for Liquid Canvas (liquidcanvas.art), an art and creative services company.
+        prompt = f"""You are a professional outreach specialist helping refine a {message_type} for Liquid Canvas (liquidcanvas.art), an art and creative services company.{platform_context}
 
 ABOUT LIQUID CANVAS (READ THIS FIRST):
 {liquid_canvas_info}

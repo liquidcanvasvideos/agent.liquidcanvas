@@ -647,7 +647,10 @@ async def create_drafts(
                 and_(
                     Prospect.id.in_(request.profile_ids),
                     social_filter,
-                    sql_func.lower(Prospect.approval_status) == 'approved'
+                    or_(
+                        Prospect.approval_status == 'approved',
+                        Prospect.approval_status == 'APPROVED'
+                    )
                 )
             )
         )
@@ -659,7 +662,10 @@ async def create_drafts(
             select(Prospect).where(
                 and_(
                     social_filter,
-                    sql_func.lower(Prospect.approval_status) == 'approved',
+                    or_(
+                        Prospect.approval_status == 'approved',
+                        Prospect.approval_status == 'APPROVED'
+                    ),
                     or_(
                         Prospect.draft_status.is_(None),
                         Prospect.draft_status == 'pending'

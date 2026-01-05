@@ -226,7 +226,10 @@ CURRENT DRAFT:
 USER REQUEST:
 {user_message}
 
-Provide helpful suggestions to refine the email. You can:
+INSTRUCTIONS:
+Respond conversationally and naturally. Explain your reasoning, ask clarifying questions if needed, and provide helpful suggestions.
+
+You can:
 - Suggest alternative phrasing
 - Improve clarity or tone
 - Add personalization based on the prospect's website
@@ -235,7 +238,15 @@ Provide helpful suggestions to refine the email. You can:
 - Ensure Liquid Canvas is clearly introduced
 - Match the recipient's role/organization type
 
-Return a conversational response with your suggestions. If you want to suggest specific text, include it clearly marked (e.g., "Suggested subject: ..." or "Suggested body: ...")."""
+OPTIONAL DRAFT SUGGESTION:
+If you want to suggest a complete rewrite of the draft, wrap it in these exact markers:
+
+--- DRAFT SUGGESTION ---
+Subject: [your suggested subject line]
+Body: [your suggested body text]
+--- END DRAFT SUGGESTION ---
+
+Draft suggestions are OPTIONAL. Only include them if you think a full rewrite would be helpful. Most responses should be conversational guidance without draft markers."""
         
         return prompt
     

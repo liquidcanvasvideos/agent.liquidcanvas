@@ -9,19 +9,25 @@ interface GeminiChatPanelProps {
   currentSubject: string
   currentBody: string
   onSuggestion?: (subject?: string, body?: string) => void
+  onDraftAdopted?: (subject: string, body: string) => void
 }
 
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  candidateDraft?: {
+    subject: string
+    body: string
+  }
 }
 
-export default function GeminiChatPanel({ prospectId, currentSubject, currentBody, onSuggestion }: GeminiChatPanelProps) {
+export default function GeminiChatPanel({ prospectId, currentSubject, currentBody, onSuggestion, onDraftAdopted }: GeminiChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const [savingDraft, setSavingDraft] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -56,14 +62,16 @@ export default function GeminiChatPanel({ prospectId, currentSubject, currentBod
       const assistantMessage: ChatMessage = {
         role: 'assistant',
         content: response.response,
-        timestamp: new Date()
+        timestamp: new Date(),
+        candidateDraft: response.candidate_draft || undefined
       }
 
       setMessages(prev => [...prev, assistantMessage])
 
-      // If Gemini suggests specific text, notify parent
-      if (response.suggested_subject || response.suggested_body) {
-        onSuggestion?.(response.suggested_subject, response.suggested_body)
+      // Legacy support: if old format suggested_subject/body exists, use it
+      // (This should not happen with new backend, but keeping for compatibility)
+      if (!response.candidate_draft && (response as any).suggested_subject || (response as any).suggested_body) {
+        onSuggestion?.((response as any).suggested_subject, (response as any).suggested_body)
       }
     } catch (error: any) {
       // Extract error message properly - handle both Error objects and string errors
@@ -93,14 +101,35 @@ export default function GeminiChatPanel({ prospectId, currentSubject, currentBod
     setTimeout(() => setCopiedIndex(null), 2000)
   }
 
-  const extractSuggestedText = (content: string): { subject?: string; body?: string } => {
-    // Try to extract suggested subject/body from Gemini response
-    const subjectMatch = content.match(/subject[:\s]+["']?([^"'\n]+)["']?/i)
-    const bodyMatch = content.match(/body[:\s]+["']?([\s\S]+?)["']?(?:\n|$)/i)
+  const handleUseDraft = async (candidateDraft: { subject: string; body: string }) => {
+    if (savingDraft) return
     
-    return {
-      subject: subjectMatch?.[1],
-      body: bodyMatch?.[1]
+    setSavingDraft(true)
+    try {
+      // Update local draft state via parent callback
+      if (onDraftAdopted) {
+        onDraftAdopted(candidateDraft.subject, candidateDraft.body)
+      } else if (onSuggestion) {
+        // Fallback to old callback if onDraftAdopted not provided
+        onSuggestion(candidateDraft.subject, candidateDraft.body)
+      }
+      
+      // Show success message
+      const successMessage: ChatMessage = {
+        role: 'assistant',
+        content: '✅ Draft adopted! The suggested draft has been applied to your email editor.',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, successMessage])
+    } catch (error: any) {
+      const errorMessage: ChatMessage = {
+        role: 'assistant',
+        content: `Error adopting draft: ${error.message || 'Failed to save draft'}`,
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
+      setSavingDraft(false)
     }
   }
 
@@ -135,6 +164,43 @@ export default function GeminiChatPanel({ prospectId, currentSubject, currentBod
                 }`}
               >
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                
+                {/* Show candidate draft preview if present */}
+                {msg.role === 'assistant' && msg.candidateDraft && (
+                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-xs font-semibold text-blue-900 mb-2">💡 Draft Suggestion</p>
+                    <div className="space-y-2 text-xs">
+                      <div>
+                        <span className="font-medium text-blue-800">Subject:</span>
+                        <p className="text-blue-900 mt-1">{msg.candidateDraft.subject}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium text-blue-800">Body:</span>
+                        <p className="text-blue-900 mt-1 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                          {msg.candidateDraft.body}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleUseDraft(msg.candidateDraft!)}
+                      disabled={savingDraft}
+                      className="mt-3 w-full px-3 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-1"
+                    >
+                      {savingDraft ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Applying...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3 h-3" />
+                          <span>Use This Draft</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+                
                 {msg.role === 'assistant' && (
                   <button
                     onClick={() => handleCopy(msg.content, idx)}

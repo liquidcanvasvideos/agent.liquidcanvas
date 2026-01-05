@@ -955,8 +955,26 @@ export default function LeadsTable({ emailsOnly = false }: LeadsTableProps) {
                       currentSubject={draftSubject}
                       currentBody={draftBody}
                       onSuggestion={(subject, body) => {
+                        // Legacy callback - update local state
                         if (subject) setDraftSubject(subject)
                         if (body) setDraftBody(body)
+                      }}
+                      onDraftAdopted={async (subject, body) => {
+                        // Update local draft state immediately
+                        setDraftSubject(subject)
+                        setDraftBody(body)
+                        
+                        // Update active prospect state
+                        if (activeProspect) {
+                          setActiveProspect({
+                            ...activeProspect,
+                            draft_subject: subject,
+                            draft_body: body
+                          })
+                        }
+                        
+                        // Note: Draft will be saved when user clicks "Send Now" or closes modal
+                        // The draft fields are now in local state and will be used for sending
                       }}
                     />
                   </div>

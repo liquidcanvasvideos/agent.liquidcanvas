@@ -1948,8 +1948,7 @@ class GeminiChatRequest(BaseModel):
 class GeminiChatResponse(BaseModel):
     success: bool
     response: str
-    suggested_subject: Optional[str] = None
-    suggested_body: Optional[str] = None
+    candidate_draft: Optional[Dict[str, str]] = None  # {subject: str, body: str} if draft suggestion detected
 
 
 @router.post("/{prospect_id}/chat", response_model=GeminiChatResponse)
@@ -2134,10 +2133,34 @@ async def gemini_chat(
                 }
             )
         
-        logger.info(f"✅ [GEMINI CHAT] Successfully generated response ({len(text_content)} chars)")
+        # Stage 6: Parse response for draft suggestions
+        stage = "parse"
+        candidate_draft = None
+        
+        # Look for draft suggestion markers
+        import re
+        draft_pattern = r'---\s*DRAFT SUGGESTION\s*---\s*Subject:\s*(.+?)\s*Body:\s*(.+?)\s*---\s*END DRAFT SUGGESTION\s*---'
+        match = re.search(draft_pattern, text_content, re.DOTALL | re.IGNORECASE)
+        
+        if match:
+            suggested_subject = match.group(1).strip()
+            suggested_body = match.group(2).strip()
+            
+            # Remove the draft suggestion markers from the response text
+            # Keep the conversational part before/after
+            text_content = re.sub(draft_pattern, '', text_content, flags=re.DOTALL | re.IGNORECASE).strip()
+            
+            candidate_draft = {
+                "subject": suggested_subject,
+                "body": suggested_body
+            }
+            logger.info(f"✅ [GEMINI CHAT] Draft suggestion detected: subject={len(suggested_subject)} chars, body={len(suggested_body)} chars")
+        
+        logger.info(f"✅ [GEMINI CHAT] Successfully generated response ({len(text_content)} chars, draft_suggestion={'yes' if candidate_draft else 'no'})")
         return GeminiChatResponse(
             success=True,
-            response=text_content
+            response=text_content,
+            candidate_draft=candidate_draft
         )
         
     except HTTPException:

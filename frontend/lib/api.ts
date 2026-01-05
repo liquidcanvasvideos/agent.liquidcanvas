@@ -1878,8 +1878,10 @@ export interface GeminiChatRequest {
 export interface GeminiChatResponse {
   success: boolean
   response: string
-  suggested_subject?: string
-  suggested_body?: string
+  candidate_draft?: {
+    subject: string
+    body: string
+  }
 }
 
 export async function geminiChat(request: GeminiChatRequest): Promise<GeminiChatResponse> {

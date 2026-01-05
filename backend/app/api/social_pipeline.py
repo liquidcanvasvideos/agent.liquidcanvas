@@ -507,18 +507,26 @@ async def scrape_social_profiles(
             detail="Master switch is disabled. Please enable it in Automation Control to run pipeline activities."
         )
     
-    # Get approved social profiles that need scraping
-    # Profiles that are approved but haven't been scraped yet (or scraping failed)
-    query = select(Prospect).where(
-        and_(
-            Prospect.source_type == 'social',
-            Prospect.approval_status == 'approved',
-            Prospect.scrape_status.in_(['DISCOVERED', 'NO_EMAIL_FOUND'])  # Not yet scraped or need re-scraping
-        )
-    )
-    
+    # Get approved social profiles to scrape
+    # If profile_ids provided, scrape those specific profiles regardless of scrape_status
+    # This allows re-scraping profiles that were already scraped
     if request.profile_ids:
-        query = query.where(Prospect.id.in_(request.profile_ids))
+        query = select(Prospect).where(
+            and_(
+                Prospect.id.in_(request.profile_ids),
+                Prospect.source_type == 'social',
+                Prospect.approval_status == 'approved'
+            )
+        )
+    else:
+        # Auto-query: get all approved profiles that haven't been scraped yet
+        query = select(Prospect).where(
+            and_(
+                Prospect.source_type == 'social',
+                Prospect.approval_status == 'approved',
+                Prospect.scrape_status.in_(['DISCOVERED', 'NO_EMAIL_FOUND'])  # Not yet scraped or need re-scraping
+            )
+        )
     
     try:
         result = await db.execute(query)

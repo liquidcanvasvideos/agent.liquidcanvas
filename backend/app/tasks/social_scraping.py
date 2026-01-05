@@ -67,6 +67,8 @@ async def scrape_social_profiles_async(job_id: str) -> dict:
         
         try:
             # Get profiles to scrape
+            # If profile_ids provided, scrape those specific profiles regardless of scrape_status
+            # This allows re-scraping profiles that were already scraped
             if profile_ids:
                 result = await db.execute(
                     select(Prospect).where(
@@ -76,6 +78,7 @@ async def scrape_social_profiles_async(job_id: str) -> dict:
                     )
                 )
                 prospects = result.scalars().all()
+                logger.info(f"📋 [SOCIAL SCRAPING] Found {len(prospects)} profiles to scrape (manual selection, ignoring scrape_status)")
             else:
                 # Auto-query: get all approved social profiles that haven't been scraped yet
                 result = await db.execute(

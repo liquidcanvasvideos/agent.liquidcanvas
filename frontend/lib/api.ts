@@ -61,7 +61,14 @@ async function authenticatedFetch(url: string, options: RequestInit = {}): Promi
       try {
         const errorData = await response.clone().json().catch(() => null)
         if (errorData) {
-          errorDetail = errorData.error || errorData.detail || errorData.message || errorDetail
+          // Handle structured error response: {error, message, stage} or simple {detail}
+          if (typeof errorData.detail === 'object' && errorData.detail?.message) {
+            errorDetail = errorData.detail.message
+          } else if (typeof errorData.detail === 'string') {
+            errorDetail = errorData.detail
+          } else {
+            errorDetail = errorData.error || errorData.message || errorDetail
+          }
         }
       } catch {
         // If JSON parsing fails, use status text
@@ -81,7 +88,33 @@ async function authenticatedFetch(url: string, options: RequestInit = {}): Promi
     return response
   } catch (error: any) {
     const fetchTime = Date.now() - startTime
-    const errorMessage = error?.message || String(error)
+    
+    // Extract error message properly - handle Error objects, strings, and plain objects
+    let errorMessage = 'Unknown error'
+    if (error instanceof Error) {
+      errorMessage = error.message
+    } else if (typeof error === 'string') {
+      errorMessage = error
+    } else if (error?.message) {
+      errorMessage = error.message
+    } else if (error?.detail) {
+      // Handle structured error: {detail: {message: "..."}} or {detail: "..."}
+      if (typeof error.detail === 'object' && error.detail?.message) {
+        errorMessage = error.detail.message
+      } else if (typeof error.detail === 'string') {
+        errorMessage = error.detail
+      } else {
+        errorMessage = JSON.stringify(error.detail)
+      }
+    } else if (error && typeof error === 'object') {
+      // Last resort: try to stringify the error object meaningfully
+      try {
+        errorMessage = JSON.stringify(error)
+      } catch {
+        errorMessage = 'Network or connection error'
+      }
+    }
+    
     const errorStack = error?.stack || new Error().stack
     
     // Create meaningful error with full context

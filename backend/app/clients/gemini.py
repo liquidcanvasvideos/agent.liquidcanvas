@@ -634,6 +634,9 @@ Do not include any text before or after the JSON. Return ONLY the JSON object.""
                                     "body": None
                                 }
                             
+                            # Strip markdown formatting (asterisks, etc.)
+                            body = strip_markdown_formatting(body)
+                            
                             logger.info(f"✅ Gemini composed {platform} message ({len(body)} chars)")
                             
                             return {
@@ -965,6 +968,9 @@ Do not include any text before or after the JSON. Return ONLY the JSON object.""
                                     "error": "Empty message body from Gemini",
                                     "body": None
                                 }
+                            
+                            # Strip markdown formatting (asterisks, etc.)
+                            body = strip_markdown_formatting(body)
                             
                             logger.info(f"✅ Gemini composed {platform} message ({len(body)} chars)")
                             

@@ -110,6 +110,34 @@ export default function SocialLeadsTable() {
     }
   }
 
+  const handleScrape = async () => {
+    const ids = Array.from(selected)
+    if (ids.length === 0) {
+      setError('Please select at least one profile to scrape')
+      return
+    }
+
+    setActionLoading(true)
+    setError(null)
+    try {
+      const result = await scrapeSocialProfiles(ids)
+      setSelected(new Set())
+      await loadProfiles()
+      // Refresh pipeline status
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('refreshSocialPipelineStatus'))
+        // Refresh jobs to show the new scraping job
+        window.dispatchEvent(new CustomEvent('jobsCompleted'))
+      }
+      setError(`✅ Scraping job started for ${result.profiles_count} profile(s). Check job log for progress.`)
+      setTimeout(() => setError(null), 5000)
+    } catch (err: any) {
+      setError(err.message || 'Failed to scrape profiles')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const handleSend = async (profileId?: string) => {
     const ids = profileId ? [profileId] : Array.from(selected)
     if (ids.length === 0) {

@@ -241,18 +241,21 @@ async def list_profiles(
                 )
             elif discovery_status.lower() == 'leads' or discovery_status.lower() == 'approved':
                 # Show only approved profiles (Social Leads)
+                # Use case-insensitive comparison to handle any case variations
+                from sqlalchemy import func
                 query = query.where(
                     and_(
                         Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value,
-                        Prospect.approval_status == 'approved'
+                        func.lower(Prospect.approval_status) == 'approved'
                     )
                 )
                 count_query = count_query.where(
                     and_(
                         Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value,
-                        Prospect.approval_status == 'approved'
+                        func.lower(Prospect.approval_status) == 'approved'
                     )
                 )
+                logger.info(f"📊 [SOCIAL PROFILES] Filtering for Social Leads: approval_status='approved' (case-insensitive)")
             else:
                 # Map discovery_status to Prospect.discovery_status
                 query = query.where(Prospect.discovery_status == discovery_status.upper())
@@ -270,6 +273,17 @@ async def list_profiles(
         prospects = result.scalars().all()
         
         logger.info(f"📊 [SOCIAL PROFILES] QUERY RESULT: Found {len(prospects)} profiles from database query (total available: {total})")
+        
+        # Debug logging: Log approval_status of first few profiles
+        if prospects:
+            logger.info(f"📊 [SOCIAL PROFILES] Sample approval_status values: {[p.approval_status for p in prospects[:3]]}")
+            logger.info(f"📊 [SOCIAL PROFILES] Sample discovery_status values: {[p.discovery_status for p in prospects[:3]]}")
+            logger.info(f"📊 [SOCIAL PROFILES] Sample scrape_status values: {[p.scrape_status for p in prospects[:3]]}")
+            logger.info(f"📊 [SOCIAL PROFILES] Sample follower_count values: {[p.follower_count for p in prospects[:3]]}")
+        elif total > 0:
+            logger.warning(f"⚠️  [SOCIAL PROFILES] Query returned 0 profiles but total count is {total} - possible pagination issue")
+        else:
+            logger.warning(f"⚠️  [SOCIAL PROFILES] No profiles found with filters: platform={platform}, discovery_status={discovery_status}")
         
         response_data = {
             "data": [

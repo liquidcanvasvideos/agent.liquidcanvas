@@ -151,7 +151,7 @@ async def get_social_pipeline_status(
             select(func.count(Prospect.id)).where(
                 and_(
                     social_filter,
-                    Prospect.approval_status == 'approved'
+                    sql_func.lower(Prospect.approval_status) == 'approved'
                 )
             )
         )
@@ -638,7 +638,7 @@ async def create_drafts(
                 and_(
                     Prospect.id.in_(request.profile_ids),
                     social_filter,
-                    Prospect.approval_status == 'approved'
+                    sql_func.lower(Prospect.approval_status) == 'approved'
                 )
             )
         )
@@ -650,7 +650,7 @@ async def create_drafts(
             select(Prospect).where(
                 and_(
                     social_filter,
-                    Prospect.approval_status == 'approved',
+                    sql_func.lower(Prospect.approval_status) == 'approved',
                     or_(
                         Prospect.draft_status.is_(None),
                         Prospect.draft_status == 'pending'

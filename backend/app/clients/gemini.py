@@ -483,6 +483,10 @@ Do not include any text before or after the JSON. Return ONLY the JSON object.""
                             subject = email_data.get("subject", f"Partnership Opportunity - {domain}")
                             body = email_data.get("body", f"Hello,\n\nI noticed your website {domain}...")
                             
+                            # Strip markdown formatting (asterisks, etc.)
+                            subject = strip_markdown_formatting(subject)
+                            body = strip_markdown_formatting(body)
+                            
                             logger.info(f"✅ Gemini composed email for {domain}")
                             
                             return {
@@ -804,6 +808,10 @@ Do not include any text before or after the JSON. Return ONLY the JSON object.""
                             
                             subject = email_data.get("subject", f"Following up - {domain}")
                             body = email_data.get("body", f"Hello,\n\nJust wanted to follow up on my previous message...")
+                            
+                            # Strip markdown formatting (asterisks, etc.)
+                            subject = strip_markdown_formatting(subject)
+                            body = strip_markdown_formatting(body)
                             
                             logger.info(f"✅ Gemini composed follow-up email #{followup_count} for {domain}")
                             

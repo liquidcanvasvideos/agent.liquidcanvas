@@ -105,46 +105,29 @@ export default function Pipeline() {
 
   useEffect(() => {
     let abortController = new AbortController()
-    let debounceTimeout: NodeJS.Timeout | null = null
     
-    const loadStatusDebounced = () => {
-      // Cancel previous request if still in flight
-      abortController.abort()
-      abortController = new AbortController()
-      
-      // Clear existing debounce timeout
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout)
-      }
-      
-      // Debounce: wait 300ms before making request
-      debounceTimeout = setTimeout(() => {
+    // Initial load only - no polling
     loadStatus()
     loadDiscoveryJobs()
-      }, 300)
-    }
-    
-    // Initial load
-    loadStatusDebounced()
-    
-    // Debounced refresh every 10 seconds
-    const interval = setInterval(() => {
-      loadStatusDebounced()
-    }, 10000)
     
     // Listen for manual refresh requests (e.g., after composing email from Leads page)
     const handleRefreshPipelineStatus = () => {
       console.log('🔄 Pipeline status refresh requested...')
-      loadStatusDebounced()
+      loadStatus()
+      loadDiscoveryJobs()
     }
     
     // Listen for discovery completion to reset pipeline state
+    // Only reset if we have a confirmed new job ID
     const handleDiscoveryCompleted = () => {
-      console.log('🔄 Discovery completed, resetting pipeline state...')
-      // Reset latest discovery job ID to trigger re-evaluation
-      setLatestDiscoveryJobId(null)
-      loadStatusDebounced()
-      loadDiscoveryJobs()
+      console.log('🔄 Discovery completed event received...')
+      // Load discovery jobs to check for new job ID
+      loadDiscoveryJobs().then(() => {
+        // Status will be reloaded by loadDiscoveryJobs if new job detected
+      }).catch(err => {
+        console.error('Failed to load discovery jobs after discovery completed:', err)
+        // Don't reset state on error - treat as false positive
+      })
     }
     
     if (typeof window !== 'undefined') {
@@ -154,10 +137,6 @@ export default function Pipeline() {
     
     return () => {
       abortController.abort()
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout)
-      }
-      clearInterval(interval)
       if (typeof window !== 'undefined') {
         window.removeEventListener('refreshPipelineStatus', handleRefreshPipelineStatus)
         window.removeEventListener('discoveryCompleted', handleDiscoveryCompleted)

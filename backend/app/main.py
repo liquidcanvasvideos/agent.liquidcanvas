@@ -21,14 +21,27 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# CRITICAL: Add CORS middleware FIRST, before any other middleware
+# This ensures CORS headers are set on all responses, including errors
+app.add_middleware(
+    CORSMiddleware,
+    # Use wildcard origins with credentials disabled so Render always
+    # sends Access-Control-Allow-Origin, regardless of the caller.
+    # We rely on Authorization headers, not cookies.
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
+
 
 @app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
+async def add_cors_headers_fallback(request: Request, call_next):
     """
     Fallback middleware to guarantee CORS headers on all responses.
-    This runs in addition to CORSMiddleware, but ensures that even
-    unexpected 500 errors include Access-Control-Allow-* headers so
-    the frontend can read the response instead of seeing a CORS block.
+    This runs AFTER CORSMiddleware and ensures that even unexpected 500 errors
+    include Access-Control-Allow-* headers so the frontend can read the response.
     """
     try:
         response = await call_next(request)
@@ -36,6 +49,7 @@ async def add_cors_headers(request: Request, call_next):
         response.headers.setdefault("Access-Control-Allow-Origin", "*")
         response.headers.setdefault("Access-Control-Allow-Methods", "*")
         response.headers.setdefault("Access-Control-Allow-Headers", "*")
+        response.headers.setdefault("Access-Control-Expose-Headers", "*")
         return response
     except Exception as e:
         # If an exception occurs, create a response with CORS headers
@@ -47,6 +61,7 @@ async def add_cors_headers(request: Request, call_next):
         error_response.headers["Access-Control-Allow-Origin"] = "*"
         error_response.headers["Access-Control-Allow-Methods"] = "*"
         error_response.headers["Access-Control-Allow-Headers"] = "*"
+        error_response.headers["Access-Control-Expose-Headers"] = "*"
         return error_response
 
 
@@ -67,6 +82,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     error_response.headers["Access-Control-Allow-Origin"] = "*"
     error_response.headers["Access-Control-Allow-Methods"] = "*"
     error_response.headers["Access-Control-Allow-Headers"] = "*"
+    error_response.headers["Access-Control-Expose-Headers"] = "*"
     return error_response
 
 
@@ -82,19 +98,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     error_response.headers["Access-Control-Allow-Origin"] = "*"
     error_response.headers["Access-Control-Allow-Methods"] = "*"
     error_response.headers["Access-Control-Allow-Headers"] = "*"
+    error_response.headers["Access-Control-Expose-Headers"] = "*"
     return error_response
-
-
-app.add_middleware(
-    CORSMiddleware,
-    # Use wildcard origins with credentials disabled so Render always
-    # sends Access-Control-Allow-Origin, regardless of the caller.
-    # We rely on Authorization headers, not cookies.
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Include routers
 from app.api import auth, settings, scraper, pipeline, manual, health, social

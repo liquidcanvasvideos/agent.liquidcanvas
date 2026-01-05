@@ -918,6 +918,8 @@ async def get_pipeline_status(
     DATA-DRIVEN: All counts derived ONLY from Prospect state, NOT from jobs
     This is the single source of truth for pipeline state.
     
+    OPTIMIZED: Fast, read-only, idempotent. Minimal logging for performance.
+    
     SINGLE SOURCE OF TRUTH MAPPING:
     - DISCOVERED → discovery_status = "DISCOVERED"
     - SCRAPED → scrape_status IN ("SCRAPED", "ENRICHED")
@@ -925,18 +927,6 @@ async def get_pipeline_status(
     - DRAFTED → draft_status = "DRAFTED"
     - SENT → send_status = "SENT"
     """
-    logger.info("📊 [PIPELINE STATUS] Computing data-driven counts from Prospect table")
-    
-    # First, log total prospects count for debugging
-    try:
-        total_prospects_result = await db.execute(
-            select(func.count(Prospect.id))
-        )
-        total_prospects = total_prospects_result.scalar() or 0
-        logger.info(f"📊 [PIPELINE STATUS] Total prospects in database: {total_prospects}")
-    except Exception as e:
-        logger.error(f"❌ Error counting total prospects: {e}", exc_info=True)
-        total_prospects = 0
     
     # Wrap entire endpoint in try-catch to handle transaction errors
     try:
@@ -958,7 +948,6 @@ async def get_pipeline_status(
             )
         )
         discovered_count = discovered.scalar() or 0
-        logger.info(f"📊 [PIPELINE STATUS] DISCOVERED count: {discovered_count} (discovery_status = 'DISCOVERED' AND source_type='website')")
         
         # Step 2: APPROVED (approval_status = "approved" AND source_type='website')
         approved = await db.execute(
@@ -985,7 +974,6 @@ async def get_pipeline_status(
             )
         )
         scraped_count = scraped.scalar() or 0
-        logger.info(f"📊 [PIPELINE STATUS] SCRAPED count: {scraped_count} (scrape_status IN ('SCRAPED', 'ENRICHED') AND source_type='website')")
         
         # Scrape-ready: any DISCOVERED prospect that has NOT been explicitly rejected AND source_type='website'
         # This unlocks scraping as soon as at least one website has been discovered,
@@ -1107,7 +1095,6 @@ async def get_pipeline_status(
             )
         )
         verified_count = verified.scalar() or 0
-        logger.info(f"📊 [PIPELINE STATUS] VERIFIED count: {verified_count} (verification_status = 'verified' AND source_type='website')")
         
         # Also count verified with email (for backwards compatibility)
         emails_verified = await db.execute(
@@ -1133,7 +1120,6 @@ async def get_pipeline_status(
             )
         )
         draft_ready_count = draft_ready.scalar() or 0
-        logger.info(f"📊 [PIPELINE STATUS] DRAFT-READY count: {draft_ready_count} (verification_status = 'verified' AND contact_email IS NOT NULL AND source_type='website')")
         
         # Backwards compatibility alias
         drafting_ready = draft_ready_count
@@ -1152,7 +1138,6 @@ async def get_pipeline_status(
                 )
             )
             drafted_count = drafted.scalar() or 0
-            logger.info(f"📊 [PIPELINE STATUS] DRAFTED count: {drafted_count} (draft_status = 'drafted' AND source_type='website')")
         except Exception as e:
             logger.error(f"❌ Error counting drafted prospects: {e}", exc_info=True)
             drafted_count = 0
@@ -1170,7 +1155,6 @@ async def get_pipeline_status(
                 )
             )
             sent_count = sent.scalar() or 0
-            logger.info(f"📊 [PIPELINE STATUS] SENT count: {sent_count} (send_status = 'sent' AND source_type='website')")
         except Exception as e:
             logger.error(f"❌ Error counting sent prospects: {e}", exc_info=True)
             sent_count = 0
@@ -1191,15 +1175,9 @@ async def get_pipeline_status(
                 )
             )
             send_ready_count = send_ready.scalar() or 0
-            logger.info(f"📊 [PIPELINE STATUS] SEND-READY count: {send_ready_count} (verified + drafted + not sent AND source_type='website')")
         except Exception as e:
             logger.error(f"❌ Error counting send-ready prospects: {e}", exc_info=True)
             send_ready_count = 0
-        
-        # Defensive logging: Log all counts for debugging
-        logger.info(f"📊 [PIPELINE STATUS] Counts computed: discovered={discovered_count}, approved={approved_count}, "
-                    f"scraped={scraped_count}, verified={verified_count}, draft_ready={draft_ready_count}, "
-                    f"drafted={drafted_count}, sent={sent_count}, send_ready={send_ready_count}")
         
         # Return pipeline status counts
         # DATA-DRIVEN: All counts derived from Prospect state only, NOT from jobs

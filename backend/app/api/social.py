@@ -289,6 +289,9 @@ async def list_profiles(
                     )
                 )
                 logger.info(f"📊 [SOCIAL PROFILES] Filtering for Social Leads: ALL approved profiles (matching Overview reviewed count logic)")
+                
+                # CRITICAL DEBUG: Log the exact query conditions
+                logger.info(f"🔍 [SOCIAL LEADS DEBUG] Query conditions: discovery_status='DISCOVERED', approval_status IN ('approved', 'APPROVED')")
             else:
                 # Map discovery_status to Prospect.discovery_status
                 query = query.where(Prospect.discovery_status == discovery_status.upper())

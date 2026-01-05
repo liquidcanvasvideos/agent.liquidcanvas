@@ -65,24 +65,38 @@ class LinkedInDiscoveryAdapter:
             client = DataForSEOClient()
             
             logger.info("🔍 [LINKEDIN DISCOVERY] Using DataForSEO to search for LinkedIn profiles")
+            logger.info(f"📋 [LINKEDIN DISCOVERY] Categories: {categories}, Locations: {locations}")
             
             # Build search queries: "site:linkedin.com/in/ [category] [location]"
             search_queries = []
             for category in categories:
                 for location in locations:
-                    query = f"site:linkedin.com/in/ {category} {location}"
-                    search_queries.append(query)
+                    # Try multiple query formats for better results
+                    query1 = f'site:linkedin.com/in/ "{category}" "{location}"'
+                    query2 = f"site:linkedin.com/in/ {category} {location}"
+                    query3 = f'"{category}" "{location}" site:linkedin.com/in/'
+                    search_queries.extend([query1, query2, query3])
             
             # Limit queries to avoid excessive API calls (but allow more combinations)
-            search_queries = search_queries[:20]  # Increased from 10 to get more results
+            search_queries = search_queries[:30]  # Increased to get more results
+            logger.info(f"📊 [LINKEDIN DISCOVERY] Built {len(search_queries)} search queries")
+            
+            queries_executed = 0
+            queries_successful = 0
+            total_results_found = 0
             
             for query in search_queries:
                 if len(prospects) >= max_results:
                     break
                 
                 try:
-                    # Get location code for DataForSEO
-                    location_code = client.get_location_code(locations[0] if locations else "usa")
+                    queries_executed += 1
+                    logger.info(f"🔍 [LINKEDIN DISCOVERY] Executing query {queries_executed}/{len(search_queries)}: '{query}'")
+                    
+                    # Get location code for DataForSEO - use the location from the query if possible
+                    location_for_code = locations[0] if locations else "usa"
+                    location_code = client.get_location_code(location_for_code)
+                    logger.debug(f"📍 [LINKEDIN DISCOVERY] Using location code {location_code} for '{location_for_code}'")
                     
                     # Search using DataForSEO
                     serp_results = await client.serp_google_organic(
@@ -91,44 +105,66 @@ class LinkedInDiscoveryAdapter:
                         depth=20  # Increased depth to get more results
                     )
                     
-                    if serp_results.get("success") and serp_results.get("results"):
-                        for result in serp_results["results"]:
-                            url = result.get("url", "")
-                            if "linkedin.com/in/" in url:
+                    logger.info(f"📥 [LINKEDIN DISCOVERY] Query result - success: {serp_results.get('success')}, results count: {len(serp_results.get('results', []))}")
+                    
+                    if serp_results.get("success"):
+                        results_list = serp_results.get("results", [])
+                        total_results_found += len(results_list)
+                        queries_successful += 1
+                        
+                        if results_list:
+                            logger.info(f"✅ [LINKEDIN DISCOVERY] Found {len(results_list)} results for query '{query}'")
+                            
+                            for result in results_list:
+                                url = result.get("url", "")
+                                logger.debug(f"🔗 [LINKEDIN DISCOVERY] Checking URL: {url}")
+                                
+                                if "linkedin.com/in/" in url:
                                 # Extract username from URL
                                 username = url.split("linkedin.com/in/")[-1].split("/")[0].split("?")[0]
                                 
-                                # Skip if we already have this username
-                                if any(p.username == username for p in prospects):
-                                    continue
-                                
-                                prospect = Prospect(
-                                    id=uuid.uuid4(),
-                                    source_type='social',
-                                    source_platform='linkedin',
-                                    domain=f"linkedin.com/in/{username}",
-                                    page_url=url,
-                                    page_title=result.get("title", f"LinkedIn Profile: {username}"),
-                                    display_name=result.get("title", username),
-                                    username=username,
-                                    profile_url=url,
-                                    discovery_status='DISCOVERED',
-                                    scrape_status='DISCOVERED',
-                                    approval_status='PENDING',
-                                    discovery_category=categories[0] if categories else None,
-                                    discovery_location=locations[0] if locations else None,
-                                    # Set default follower count and engagement rate (will be updated later if available)
-                                    follower_count=1000,  # Default to pass qualification
-                                    engagement_rate=1.5,  # Default to pass LinkedIn minimum (1.0%)
-                                )
-                                prospects.append(prospect)
-                                
-                                if len(prospects) >= max_results:
-                                    break
+                                    # Skip if we already have this username
+                                    if any(p.username == username for p in prospects):
+                                        logger.debug(f"⏭️  [LINKEDIN DISCOVERY] Skipping duplicate username: {username}")
+                                        continue
+                                    
+                                    logger.info(f"✅ [LINKEDIN DISCOVERY] Found LinkedIn profile: {username} - {result.get('title', 'No title')}")
+                                    
+                                    prospect = Prospect(
+                                        id=uuid.uuid4(),
+                                        source_type='social',
+                                        source_platform='linkedin',
+                                        domain=f"linkedin.com/in/{username}",
+                                        page_url=url,
+                                        page_title=result.get("title", f"LinkedIn Profile: {username}"),
+                                        display_name=result.get("title", username),
+                                        username=username,
+                                        profile_url=url,
+                                        discovery_status='DISCOVERED',
+                                        scrape_status='DISCOVERED',
+                                        approval_status='PENDING',
+                                        discovery_category=categories[0] if categories else None,
+                                        discovery_location=locations[0] if locations else None,
+                                        # Set default follower count and engagement rate (will be updated later if available)
+                                        follower_count=1000,  # Default to pass qualification
+                                        engagement_rate=1.5,  # Default to pass LinkedIn minimum (1.0%)
+                                    )
+                                    prospects.append(prospect)
+                                    
+                                    if len(prospects) >= max_results:
+                                        break
+                                else:
+                                    logger.debug(f"⏭️  [LINKEDIN DISCOVERY] URL doesn't match LinkedIn profile pattern: {url}")
+                        else:
+                            logger.warning(f"⚠️  [LINKEDIN DISCOVERY] Query '{query}' returned no results")
+                    else:
+                        error_msg = serp_results.get("error", "Unknown error")
+                        logger.warning(f"⚠️  [LINKEDIN DISCOVERY] Query '{query}' failed: {error_msg}")
                 except Exception as query_error:
-                    logger.warning(f"⚠️  [LINKEDIN DISCOVERY] Query '{query}' failed: {query_error}. Continuing with next query.")
+                    logger.error(f"❌ [LINKEDIN DISCOVERY] Query '{query}' failed with exception: {query_error}", exc_info=True)
                     continue
             
+            logger.info(f"📊 [LINKEDIN DISCOVERY] Summary - Queries executed: {queries_executed}, Successful: {queries_successful}, Total results: {total_results_found}, Profiles extracted: {len(prospects)}")
             logger.info(f"✅ [LINKEDIN DISCOVERY] Discovered {len(prospects)} profiles via DataForSEO")
             return prospects[:max_results]
             

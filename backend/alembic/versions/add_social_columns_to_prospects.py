@@ -13,9 +13,8 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision = 'add_social_columns'
-# Chain from final_schema_repair which should exist in production
-# If merge_social_branches exists, this will still work as it's idempotent
-down_revision = 'final_schema_repair'
+# Chain from add_serp_intent_fields which is the last migration in the current chain
+down_revision = 'add_serp_intent_fields'
 branch_labels = None
 depends_on = None
 

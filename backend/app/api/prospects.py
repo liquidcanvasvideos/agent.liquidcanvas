@@ -2188,6 +2188,11 @@ async def gemini_chat(
             suggested_subject = match.group(1).strip()
             suggested_body = match.group(2).strip()
             
+            # Strip markdown formatting (asterisks, etc.) from draft suggestions
+            from app.clients.gemini import strip_markdown_formatting
+            suggested_subject = strip_markdown_formatting(suggested_subject)
+            suggested_body = strip_markdown_formatting(suggested_body)
+            
             # Remove the draft suggestion markers from the response text
             # Keep the conversational part before/after
             text_content = re.sub(draft_pattern, '', text_content, flags=re.DOTALL | re.IGNORECASE).strip()

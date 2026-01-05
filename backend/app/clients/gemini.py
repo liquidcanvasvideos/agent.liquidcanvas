@@ -16,6 +16,45 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+def strip_markdown_formatting(text: str) -> str:
+    """
+    Strip markdown formatting from text, especially asterisks for bold/italic.
+    
+    Removes:
+    - **bold** -> bold
+    - *italic* -> italic
+    - ***bold italic*** -> bold italic
+    - Other common markdown formatting
+    
+    Returns plain text suitable for email/DM drafts.
+    """
+    if not text:
+        return text
+    
+    import re
+    
+    # Remove markdown bold/italic (**, *, ***)
+    text = re.sub(r'\*\*\*([^*]+)\*\*\*', r'\1', text)  # ***bold italic***
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **bold**
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)  # *italic*
+    
+    # Remove other markdown formatting
+    text = re.sub(r'__([^_]+)__', r'\1', text)  # __bold__
+    text = re.sub(r'_([^_]+)_', r'\1', text)  # _italic_
+    text = re.sub(r'~~([^~]+)~~', r'\1', text)  # ~~strikethrough~~
+    text = re.sub(r'`([^`]+)`', r'\1', text)  # `code`
+    text = re.sub(r'```[\s\S]*?```', '', text)  # ```code blocks```
+    
+    # Clean up any remaining asterisks that might be standalone
+    text = re.sub(r'\*+', '', text)
+    
+    # Clean up extra whitespace
+    text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)  # Multiple blank lines -> double
+    text = text.strip()
+    
+    return text
+
+
 class GeminiClient:
     """Client for Google Gemini API"""
     
@@ -656,10 +695,17 @@ Do not include any text before or after the JSON. Return ONLY the JSON object.""
         if json_match:
             try:
                 email_data = json.loads(json_match.group())
+                subject = email_data.get("subject", f"Partnership Opportunity - {domain}")
+                body = email_data.get("body", text)
+                
+                # Strip markdown formatting (asterisks, etc.)
+                subject = strip_markdown_formatting(subject)
+                body = strip_markdown_formatting(body)
+                
                 return {
                     "success": True,
-                    "subject": email_data.get("subject", f"Partnership Opportunity - {domain}"),
-                    "body": email_data.get("body", text)
+                    "subject": subject,
+                    "body": body
                 }
             except:
                 pass

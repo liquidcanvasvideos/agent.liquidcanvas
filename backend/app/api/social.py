@@ -224,9 +224,39 @@ async def list_profiles(
             count_query = count_query.where(Prospect.source_platform == platform_lower)
         
         if discovery_status:
-            # Map discovery_status to Prospect.discovery_status
-            query = query.where(Prospect.discovery_status == discovery_status.upper())
-            count_query = count_query.where(Prospect.discovery_status == discovery_status.upper())
+            # Special handling for 'discovered' and 'leads' statuses
+            if discovery_status.lower() == 'discovered':
+                # Show only PENDING profiles (needs accept/reject)
+                query = query.where(
+                    and_(
+                        Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value,
+                        Prospect.approval_status == 'PENDING'
+                    )
+                )
+                count_query = count_query.where(
+                    and_(
+                        Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value,
+                        Prospect.approval_status == 'PENDING'
+                    )
+                )
+            elif discovery_status.lower() == 'leads' or discovery_status.lower() == 'approved':
+                # Show only approved profiles (Social Leads)
+                query = query.where(
+                    and_(
+                        Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value,
+                        Prospect.approval_status == 'approved'
+                    )
+                )
+                count_query = count_query.where(
+                    and_(
+                        Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value,
+                        Prospect.approval_status == 'approved'
+                    )
+                )
+            else:
+                # Map discovery_status to Prospect.discovery_status
+                query = query.where(Prospect.discovery_status == discovery_status.upper())
+                count_query = count_query.where(Prospect.discovery_status == discovery_status.upper())
         
         # Get total count
         total_result = await db.execute(count_query)

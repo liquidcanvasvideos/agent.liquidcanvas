@@ -2,11 +2,14 @@
 Google Gemini API client for email composition
 """
 import httpx
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 import os
 from dotenv import load_dotenv
 import logging
 import json
+
+if TYPE_CHECKING:
+    from app.models.prospect import Prospect
 
 load_dotenv()
 
@@ -136,6 +139,105 @@ Return a concise summary (2-3 sentences) about Liquid Canvas that can be used in
         except Exception as e:
             logger.warning(f"⚠️  Failed to fetch website content from {page_url}: {e}")
             return None
+    
+    async def build_chat_prompt(
+        self,
+        prospect: "Prospect",
+        user_message: str,
+        current_subject: Optional[str] = None,
+        current_body: Optional[str] = None
+    ) -> str:
+        """
+        Build a prompt for Gemini chat to refine email drafts.
+        
+        This centralizes prompt construction for chat, ensuring Liquid Canvas context
+        is always included and positioning is clear.
+        
+        Args:
+            prospect: Prospect model object with domain, page_title, page_url, etc.
+            user_message: User's chat message/request
+            current_subject: Current draft subject (if any)
+            current_body: Current draft body (if any)
+        
+        Returns:
+            Complete prompt string for Gemini
+        """
+        # Get Liquid Canvas context
+        liquid_canvas_info = await self._search_liquid_canvas_info()
+        
+        # Fetch website content for better context
+        website_content = await self._fetch_website_content(
+            getattr(prospect, 'page_url', None),
+            getattr(prospect, 'domain', '')
+        )
+        
+        # Build positioning summary
+        positioning_summary = await self._build_positioning_summary(
+            website_content,
+            getattr(prospect, 'page_title', None),
+            getattr(prospect, 'page_snippet', None),
+            getattr(prospect, 'domain', '')
+        )
+        
+        # Build prospect context
+        prospect_info = []
+        if hasattr(prospect, 'domain') and prospect.domain:
+            prospect_info.append(f"- Domain: {prospect.domain}")
+        if hasattr(prospect, 'page_title') and prospect.page_title:
+            prospect_info.append(f"- Website Title: {prospect.page_title}")
+        if hasattr(prospect, 'page_url') and prospect.page_url:
+            prospect_info.append(f"- Website URL: {prospect.page_url}")
+        if hasattr(prospect, 'discovery_category') and prospect.discovery_category:
+            prospect_info.append(f"- Category: {prospect.discovery_category}")
+        
+        prospect_context = "\n".join(prospect_info) if prospect_info else "- Domain: Unknown"
+        
+        # Build current draft context
+        draft_context = []
+        if current_subject:
+            draft_context.append(f"Subject: {current_subject}")
+        else:
+            draft_context.append("Subject: (not set)")
+        
+        if current_body:
+            draft_context.append(f"Body: {current_body}")
+        else:
+            draft_context.append("Body: (empty)")
+        
+        draft_text = "\n".join(draft_context)
+        
+        # Build complete prompt
+        prompt = f"""You are a professional outreach specialist helping refine an email draft for Liquid Canvas (liquidcanvas.art), an art and creative services company.
+
+ABOUT LIQUID CANVAS (READ THIS FIRST):
+{liquid_canvas_info}
+
+Website: https://liquidcanvas.art
+
+POSITIONING SUMMARY (How to approach this recipient):
+{positioning_summary}
+
+PROSPECT INFORMATION:
+{prospect_context}
+
+CURRENT DRAFT:
+{draft_text}
+
+USER REQUEST:
+{user_message}
+
+Provide helpful suggestions to refine the email. You can:
+- Suggest alternative phrasing
+- Improve clarity or tone
+- Add personalization based on the prospect's website
+- Refine the call-to-action
+- Make it more engaging
+- Ensure Liquid Canvas is clearly introduced
+- Match the recipient's role/organization type
+
+Return a conversational response with your suggestions. If you want to suggest specific text, include it clearly marked (e.g., "Suggested subject: ..." or "Suggested body: ...")."""
+        
+        return prompt
     
     async def _build_positioning_summary(
         self,

@@ -1939,7 +1939,7 @@ async def export_scraped_emails_csv(
 # ============================================
 
 class GeminiChatRequest(BaseModel):
-    prospect_id: UUID
+    # prospect_id is in the URL path, not the body
     message: str
     current_subject: Optional[str] = None
     current_body: Optional[str] = None
@@ -2020,31 +2020,14 @@ async def gemini_chat(
                 }
             )
         
-        # Stage 3: Build prompt
+        # Stage 3: Build prompt using centralized method
         stage = "prompt"
-        context = f"""You are helping refine an outreach email draft for Liquid Canvas (liquidcanvas.art).
-
-PROSPECT INFORMATION:
-- Domain: {prospect.domain}
-- Website Title: {prospect.page_title or 'Unknown'}
-- Website URL: {prospect.page_url or 'N/A'}
-- Category: {prospect.discovery_category or 'Unknown'}
-
-CURRENT DRAFT:
-Subject: {request.current_subject or '(not set)'}
-Body: {request.current_body or '(empty)'}
-
-USER REQUEST:
-{request.message}
-
-Provide helpful suggestions to refine the email. You can:
-- Suggest alternative phrasing
-- Improve clarity or tone
-- Add personalization
-- Refine the call-to-action
-- Make it more engaging
-
-Return a conversational response with your suggestions. If you want to suggest specific text, include it clearly marked."""
+        context = await gemini_client.build_chat_prompt(
+            prospect=prospect,
+            user_message=request.message,
+            current_subject=request.current_subject,
+            current_body=request.current_body
+        )
         
         logger.info(f"✅ [GEMINI CHAT] Prompt built ({len(context)} chars)")
         

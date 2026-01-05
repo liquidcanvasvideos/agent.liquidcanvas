@@ -226,14 +226,22 @@ async def list_profiles(
         if discovery_status:
             # Special handling for 'discovered' and 'leads' statuses
             if discovery_status.lower() == 'discovered':
-                # Show only PENDING profiles (needs accept/reject)
-                # Also include NULL approval_status (treat as PENDING)
+                # DISCOVERED TAB: Show ALL discovered profiles that haven't been accepted
+                # Visibility is inclusive - show all profiles regardless of qualification/scrape status
+                # Only exclude profiles that are already approved (they belong in Social Leads)
+                # This ensures existing data is visible even if approval_status is NULL or unexpected values
+                from sqlalchemy import func
                 query = query.where(
                     and_(
                         Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value,
                         or_(
                             Prospect.approval_status == 'PENDING',
-                            Prospect.approval_status.is_(None)  # NULL means not yet reviewed
+                            Prospect.approval_status.is_(None),  # NULL means not yet reviewed
+                            # Also include profiles with approval_status != 'approved' (handles edge cases)
+                            and_(
+                                Prospect.approval_status.isnot(None),
+                                func.lower(Prospect.approval_status) != 'approved'
+                            )
                         )
                     )
                 )
@@ -242,15 +250,24 @@ async def list_profiles(
                         Prospect.discovery_status == DiscoveryStatus.DISCOVERED.value,
                         or_(
                             Prospect.approval_status == 'PENDING',
-                            Prospect.approval_status.is_(None)  # NULL means not yet reviewed
+                            Prospect.approval_status.is_(None),  # NULL means not yet reviewed
+                            # Also include profiles with approval_status != 'approved' (handles edge cases)
+                            and_(
+                                Prospect.approval_status.isnot(None),
+                                func.lower(Prospect.approval_status) != 'approved'
+                            )
                         )
                     )
                 )
-                logger.info(f"📊 [SOCIAL PROFILES] Filtering for Discovered: approval_status IN ('PENDING', NULL)")
+                logger.info(f"📊 [SOCIAL PROFILES] Filtering for Discovered: ALL discovered profiles except approved (inclusive visibility)")
             elif discovery_status.lower() == 'leads' or discovery_status.lower() == 'approved':
-                # Show only approved profiles (Social Leads)
-                # Use case-insensitive comparison with func.lower() for PostgreSQL compatibility
-                # Also handle NULL approval_status (treat as not approved)
+                # SOCIAL LEADS TAB: Show ALL approved profiles
+                # Visibility is inclusive - show all approved profiles regardless of:
+                # - job_id (show across all jobs)
+                # - qualification status (is_eligible)
+                # - scrape_status (show even if not scraped yet)
+                # - engagement_rate (show even if NULL)
+                # Acceptance is the ONLY gate - if approved, show it
                 from sqlalchemy import func
                 query = query.where(
                     and_(
@@ -266,7 +283,7 @@ async def list_profiles(
                         func.lower(Prospect.approval_status) == 'approved'
                     )
                 )
-                logger.info(f"📊 [SOCIAL PROFILES] Filtering for Social Leads: approval_status (case-insensitive) = 'approved', excluding NULL")
+                logger.info(f"📊 [SOCIAL PROFILES] Filtering for Social Leads: ALL approved profiles (inclusive, no job/qualification/scrape filters)")
             else:
                 # Map discovery_status to Prospect.discovery_status
                 query = query.where(Prospect.discovery_status == discovery_status.upper())

@@ -423,6 +423,7 @@ async def review_profiles(
             
             async def scrape_profiles_background():
                 """Scrape profiles in background to get real follower counts, engagement rates, and emails"""
+                from app.db.database import AsyncSessionLocal
                 async with AsyncSessionLocal() as scrape_db:
                     try:
                         for prospect in prospects:

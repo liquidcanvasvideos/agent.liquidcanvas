@@ -810,13 +810,13 @@ async def list_leads(
                 logger.info(f"📊 [LEADS] FALLBACK QUERY RESULT: Found {len(prospects)} prospects using fallback query (total available: {total})")
             else:
                 # Re-raise if it's a different error
-            logger.error(f"❌ [LEADS] Query failed: {query_err}", exc_info=True)
-            await db.rollback()
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=500,
-                detail=f"Database query failed: {str(query_err)}. This indicates a schema mismatch - check logs."
-            )
+                logger.error(f"❌ [LEADS] Query failed: {query_err}", exc_info=True)
+                await db.rollback()
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Database query failed: {str(query_err)}. This indicates a schema mismatch - check logs."
+                )
         
         # Safely convert prospects to response, handling NULL draft fields and missing columns
         prospect_responses = []

@@ -224,12 +224,17 @@ async def startup():
                 logger.info(f"📁 Changed to directory: {alembic_dir}")
                 logger.info("🚀 Executing: alembic upgrade head")
                 
-                # Run migrations
-                command.upgrade(alembic_cfg, "head")
-                
-                logger.info("=" * 60)
-                logger.info("✅ Database migrations completed successfully")
-                logger.info("=" * 60)
+                # Run migrations - catch SystemExit from Alembic to prevent app crash
+                try:
+                    command.upgrade(alembic_cfg, "head")
+                    logger.info("=" * 60)
+                    logger.info("✅ Database migrations completed successfully")
+                    logger.info("=" * 60)
+                except SystemExit as sys_exit:
+                    # Alembic may call sys.exit() on errors - catch and convert to exception
+                    exit_code = sys_exit.code if hasattr(sys_exit, 'code') else 1
+                    logger.error(f"❌ Alembic exited with code {exit_code}")
+                    raise Exception(f"Alembic migration failed with exit code {exit_code}. Check migration files and database state.") from sys_exit
             finally:
                 os.chdir(original_cwd)
                 

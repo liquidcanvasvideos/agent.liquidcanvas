@@ -769,8 +769,24 @@ async def list_leads(
         except Exception as query_err:
             # Check if error is due to missing bio_text/external_links/scraped_at columns
             error_str = str(query_err).lower()
-            if 'bio_text' in error_str or 'external_links' in error_str or 'scraped_at' in error_str:
-                logger.warning(f"⚠️  [LEADS] Missing columns detected (bio_text/external_links/scraped_at). Migration add_realtime_scraping_fields not applied. Using fallback query.")
+            error_type = type(query_err).__name__
+            error_repr = repr(query_err).lower()
+            
+            # Catch ProgrammingError and UndefinedColumnError specifically
+            # Check error type, error message, and error repr for maximum coverage
+            is_column_error = (
+                'bio_text' in error_str or 
+                'external_links' in error_str or 
+                'scraped_at' in error_str or
+                'undefinedcolumnerror' in error_str or
+                'undefinedcolumnerror' in error_repr or
+                'programmingerror' in error_type.lower() or
+                'programmingerror' in error_repr or
+                'column' in error_str and ('does not exist' in error_str or 'not exist' in error_str)
+            )
+            
+            if is_column_error:
+                logger.warning(f"⚠️  [LEADS] Missing columns detected (error: {error_type}). Migration add_realtime_scraping_fields not applied. Using fallback query. Error: {error_str[:200]}")
                 try:
                     # Use raw SQL query that excludes missing columns
                     from sqlalchemy import text
@@ -790,37 +806,57 @@ async def list_leads(
                         LIMIT :limit OFFSET :skip
                     """)
                     logger.info(f"🔍 [LEADS FALLBACK] Executing fallback query with limit={limit}, skip={skip}")
-                    fallback_result = await db.execute(fallback_query, {"limit": limit, "skip": skip})
-                    rows = fallback_result.fetchall()
-                    logger.info(f"📊 [LEADS FALLBACK] Fallback query returned {len(rows)} rows")
-                    # Convert rows to Prospect-like objects
-                    prospects = []
-                    column_names = ['id', 'domain', 'page_url', 'page_title', 'contact_email', 'contact_method', 'da_est', 'score',
-                                   'discovery_status', 'scrape_status', 'approval_status', 'verification_status', 'draft_status', 'send_status',
-                                   'stage', 'outreach_status', 'last_sent', 'followups_sent', 'draft_subject', 'draft_body', 'final_body',
-                                   'thread_id', 'sequence_index', 'is_manual', 'discovery_query_id', 'discovery_category', 'discovery_location',
-                                   'discovery_keywords', 'scrape_payload', 'scrape_source_url', 'verification_confidence', 'verification_payload',
-                                   'dataforseo_payload', 'snov_payload', 'serp_intent', 'serp_confidence', 'serp_signals',
-                                   'source_type', 'source_platform', 'profile_url', 'username', 'display_name', 'follower_count', 'engagement_rate',
-                                   'created_at', 'updated_at']
-                    for row in rows:
-                        try:
-                            # Create a minimal Prospect object from row data
-                            # Access row as tuple or Row object
-                            row_data = tuple(row) if hasattr(row, '__iter__') else row
-                            prospect = Prospect()
-                            for i, col_name in enumerate(column_names):
-                                if i < len(row_data):
-                                    try:
-                                        setattr(prospect, col_name, row_data[i])
-                                    except Exception as attr_err:
-                                        logger.warning(f"⚠️  [LEADS FALLBACK] Could not set {col_name} on prospect: {attr_err}")
-                                        continue
-                            prospects.append(prospect)
-                        except Exception as row_err:
-                            logger.error(f"❌ [LEADS FALLBACK] Error converting row to Prospect: {row_err}", exc_info=True)
-                            continue
-                    logger.info(f"📊 [LEADS] FALLBACK QUERY RESULT: Found {len(prospects)} prospects using fallback query (total available: {total})")
+                    try:
+                        fallback_result = await db.execute(fallback_query, {"limit": limit, "skip": skip})
+                        rows = fallback_result.fetchall()
+                        logger.info(f"📊 [LEADS FALLBACK] Fallback query returned {len(rows)} rows")
+                        
+                        # Convert rows to Prospect-like objects
+                        prospects = []
+                        column_names = ['id', 'domain', 'page_url', 'page_title', 'contact_email', 'contact_method', 'da_est', 'score',
+                                       'discovery_status', 'scrape_status', 'approval_status', 'verification_status', 'draft_status', 'send_status',
+                                       'stage', 'outreach_status', 'last_sent', 'followups_sent', 'draft_subject', 'draft_body', 'final_body',
+                                       'thread_id', 'sequence_index', 'is_manual', 'discovery_query_id', 'discovery_category', 'discovery_location',
+                                       'discovery_keywords', 'scrape_payload', 'scrape_source_url', 'verification_confidence', 'verification_payload',
+                                       'dataforseo_payload', 'snov_payload', 'serp_intent', 'serp_confidence', 'serp_signals',
+                                       'source_type', 'source_platform', 'profile_url', 'username', 'display_name', 'follower_count', 'engagement_rate',
+                                       'created_at', 'updated_at']
+                        
+                        for row_idx, row in enumerate(rows):
+                            try:
+                                # Access row as tuple or Row object
+                                if hasattr(row, '_mapping'):
+                                    # Row object with column access
+                                    row_dict = dict(row._mapping)
+                                    prospect = Prospect()
+                                    for col_name in column_names:
+                                        if col_name in row_dict:
+                                            try:
+                                                setattr(prospect, col_name, row_dict[col_name])
+                                            except Exception as attr_err:
+                                                logger.warning(f"⚠️  [LEADS FALLBACK] Could not set {col_name} on prospect: {attr_err}")
+                                                continue
+                                    prospects.append(prospect)
+                                else:
+                                    # Tuple or list
+                                    row_data = tuple(row) if hasattr(row, '__iter__') and not isinstance(row, (str, bytes)) else (row,)
+                                    prospect = Prospect()
+                                    for i, col_name in enumerate(column_names):
+                                        if i < len(row_data):
+                                            try:
+                                                setattr(prospect, col_name, row_data[i])
+                                            except Exception as attr_err:
+                                                logger.warning(f"⚠️  [LEADS FALLBACK] Could not set {col_name} on prospect: {attr_err}")
+                                                continue
+                                    prospects.append(prospect)
+                            except Exception as row_err:
+                                logger.error(f"❌ [LEADS FALLBACK] Error converting row {row_idx} to Prospect: {row_err}", exc_info=True)
+                                continue
+                        
+                        logger.info(f"📊 [LEADS] FALLBACK QUERY RESULT: Successfully converted {len(prospects)} prospects from {len(rows)} rows (total available: {total})")
+                    except Exception as fallback_exec_err:
+                        logger.error(f"❌ [LEADS FALLBACK] Fallback query execution failed: {fallback_exec_err}", exc_info=True)
+                        raise  # Re-raise to trigger outer fallback error handler
                 except Exception as fallback_err:
                     logger.error(f"❌ [LEADS] Fallback query also failed: {fallback_err}", exc_info=True)
                     # CRITICAL: If fallback fails, we must either fix total or raise error
@@ -1053,8 +1089,24 @@ async def list_scraped_emails(
         except Exception as query_err:
             # Check if error is due to missing bio_text/external_links/scraped_at columns
             error_str = str(query_err).lower()
-            if 'bio_text' in error_str or 'external_links' in error_str or 'scraped_at' in error_str:
-                logger.warning(f"⚠️  [SCRAPED EMAILS] Missing columns detected (bio_text/external_links/scraped_at). Migration add_realtime_scraping_fields not applied. Using fallback query.")
+            error_type = type(query_err).__name__
+            error_repr = repr(query_err).lower()
+            
+            # Catch ProgrammingError and UndefinedColumnError specifically
+            # Check error type, error message, and error repr for maximum coverage
+            is_column_error = (
+                'bio_text' in error_str or 
+                'external_links' in error_str or 
+                'scraped_at' in error_str or
+                'undefinedcolumnerror' in error_str or
+                'undefinedcolumnerror' in error_repr or
+                'programmingerror' in error_type.lower() or
+                'programmingerror' in error_repr or
+                'column' in error_str and ('does not exist' in error_str or 'not exist' in error_str)
+            )
+            
+            if is_column_error:
+                logger.warning(f"⚠️  [SCRAPED EMAILS] Missing columns detected (error: {error_type}). Migration add_realtime_scraping_fields not applied. Using fallback query. Error: {error_str[:200]}")
                 try:
                     # Use raw SQL query that excludes missing columns
                     from sqlalchemy import text

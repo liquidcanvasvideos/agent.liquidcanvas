@@ -1294,8 +1294,24 @@ async def get_websites(
         except Exception as query_err:
             # Check if error is due to missing bio_text/external_links/scraped_at columns
             error_str = str(query_err).lower()
-            if 'bio_text' in error_str or 'external_links' in error_str or 'scraped_at' in error_str:
-                logger.warning(f"⚠️  [WEBSITES] Missing columns detected (bio_text/external_links/scraped_at). Migration add_realtime_scraping_fields not applied. Using fallback query.")
+            error_type = type(query_err).__name__
+            error_repr = repr(query_err).lower()
+            
+            # Catch ProgrammingError and UndefinedColumnError specifically
+            # Check error type, error message, and error repr for maximum coverage
+            is_column_error = (
+                'bio_text' in error_str or 
+                'external_links' in error_str or 
+                'scraped_at' in error_str or
+                'undefinedcolumnerror' in error_str or
+                'undefinedcolumnerror' in error_repr or
+                'programmingerror' in error_type.lower() or
+                'programmingerror' in error_repr or
+                'column' in error_str and ('does not exist' in error_str or 'not exist' in error_str)
+            )
+            
+            if is_column_error:
+                logger.warning(f"⚠️  [WEBSITES] Missing columns detected (error: {error_type}). Migration add_realtime_scraping_fields not applied. Using fallback query. Error: {error_str[:200]}")
                 try:
                     # Use raw SQL query that excludes missing columns
                     fallback_query = text("""

@@ -1041,54 +1041,60 @@ async def list_scraped_emails(
             error_str = str(query_err).lower()
             if 'bio_text' in error_str or 'external_links' in error_str or 'scraped_at' in error_str:
                 logger.warning(f"⚠️  [SCRAPED EMAILS] Missing columns detected (bio_text/external_links/scraped_at). Migration add_realtime_scraping_fields not applied. Using fallback query.")
-                # Use raw SQL query that excludes missing columns
-                from sqlalchemy import text
-                fallback_query = text("""
-                    SELECT id, domain, page_url, page_title, contact_email, contact_method, da_est, score,
-                           discovery_status, scrape_status, approval_status, verification_status, draft_status, send_status,
-                           stage, outreach_status, last_sent, followups_sent, draft_subject, draft_body, final_body,
-                           thread_id, sequence_index, is_manual, discovery_query_id, discovery_category, discovery_location,
-                           discovery_keywords, scrape_payload, scrape_source_url, verification_confidence, verification_payload,
-                           dataforseo_payload, snov_payload, serp_intent, serp_confidence, serp_signals,
-                           source_type, source_platform, profile_url, username, display_name, follower_count, engagement_rate,
-                           created_at, updated_at
-                    FROM prospects
-                    WHERE contact_email IS NOT NULL
-                      AND scrape_status IN ('SCRAPED', 'ENRICHED')
-                    AND (source_type = 'website' OR source_type IS NULL)
-                    ORDER BY created_at DESC
-                    LIMIT :limit OFFSET :skip
-                """)
-                fallback_result = await db.execute(fallback_query, {"limit": limit, "skip": skip})
-                rows = fallback_result.fetchall()
-                # Convert rows to Prospect-like objects
-                prospects = []
-                column_names = ['id', 'domain', 'page_url', 'page_title', 'contact_email', 'contact_method', 'da_est', 'score',
-                               'discovery_status', 'scrape_status', 'approval_status', 'verification_status', 'draft_status', 'send_status',
-                               'stage', 'outreach_status', 'last_sent', 'followups_sent', 'draft_subject', 'draft_body', 'final_body',
-                               'thread_id', 'sequence_index', 'is_manual', 'discovery_query_id', 'discovery_category', 'discovery_location',
-                               'discovery_keywords', 'scrape_payload', 'scrape_source_url', 'verification_confidence', 'verification_payload',
-                               'dataforseo_payload', 'snov_payload', 'serp_intent', 'serp_confidence', 'serp_signals',
-                               'source_type', 'source_platform', 'profile_url', 'username', 'display_name', 'follower_count', 'engagement_rate',
-                               'created_at', 'updated_at']
-                for row in rows:
-                    try:
-                        # Create a minimal Prospect object from row data
-                        # Access row as tuple or Row object
-                        row_data = tuple(row) if hasattr(row, '__iter__') else row
-                        prospect = Prospect()
-                        for i, col_name in enumerate(column_names):
-                            if i < len(row_data):
-                                try:
-                                    setattr(prospect, col_name, row_data[i])
-                                except Exception as attr_err:
-                                    logger.warning(f"⚠️  [SCRAPED EMAILS FALLBACK] Could not set {col_name} on prospect: {attr_err}")
-                                    continue
-                        prospects.append(prospect)
-                    except Exception as row_err:
-                        logger.error(f"❌ [SCRAPED EMAILS FALLBACK] Error converting row to Prospect: {row_err}", exc_info=True)
-                        continue
-                logger.info(f"📊 [SCRAPED EMAILS] FALLBACK QUERY RESULT: Found {len(prospects)} prospects using fallback query (total available: {total})")
+                try:
+                    # Use raw SQL query that excludes missing columns
+                    from sqlalchemy import text
+                    fallback_query = text("""
+                        SELECT id, domain, page_url, page_title, contact_email, contact_method, da_est, score,
+                               discovery_status, scrape_status, approval_status, verification_status, draft_status, send_status,
+                               stage, outreach_status, last_sent, followups_sent, draft_subject, draft_body, final_body,
+                               thread_id, sequence_index, is_manual, discovery_query_id, discovery_category, discovery_location,
+                               discovery_keywords, scrape_payload, scrape_source_url, verification_confidence, verification_payload,
+                               dataforseo_payload, snov_payload, serp_intent, serp_confidence, serp_signals,
+                               source_type, source_platform, profile_url, username, display_name, follower_count, engagement_rate,
+                               created_at, updated_at
+                        FROM prospects
+                        WHERE contact_email IS NOT NULL
+                          AND scrape_status IN ('SCRAPED', 'ENRICHED')
+                        AND (source_type = 'website' OR source_type IS NULL)
+                        ORDER BY created_at DESC
+                        LIMIT :limit OFFSET :skip
+                    """)
+                    fallback_result = await db.execute(fallback_query, {"limit": limit, "skip": skip})
+                    rows = fallback_result.fetchall()
+                    # Convert rows to Prospect-like objects
+                    prospects = []
+                    column_names = ['id', 'domain', 'page_url', 'page_title', 'contact_email', 'contact_method', 'da_est', 'score',
+                                   'discovery_status', 'scrape_status', 'approval_status', 'verification_status', 'draft_status', 'send_status',
+                                   'stage', 'outreach_status', 'last_sent', 'followups_sent', 'draft_subject', 'draft_body', 'final_body',
+                                   'thread_id', 'sequence_index', 'is_manual', 'discovery_query_id', 'discovery_category', 'discovery_location',
+                                   'discovery_keywords', 'scrape_payload', 'scrape_source_url', 'verification_confidence', 'verification_payload',
+                                   'dataforseo_payload', 'snov_payload', 'serp_intent', 'serp_confidence', 'serp_signals',
+                                   'source_type', 'source_platform', 'profile_url', 'username', 'display_name', 'follower_count', 'engagement_rate',
+                                   'created_at', 'updated_at']
+                    for row in rows:
+                        try:
+                            # Create a minimal Prospect object from row data
+                            # Access row as tuple or Row object
+                            row_data = tuple(row) if hasattr(row, '__iter__') else row
+                            prospect = Prospect()
+                            for i, col_name in enumerate(column_names):
+                                if i < len(row_data):
+                                    try:
+                                        setattr(prospect, col_name, row_data[i])
+                                    except Exception as attr_err:
+                                        logger.warning(f"⚠️  [SCRAPED EMAILS FALLBACK] Could not set {col_name} on prospect: {attr_err}")
+                                        continue
+                            prospects.append(prospect)
+                        except Exception as row_err:
+                            logger.error(f"❌ [SCRAPED EMAILS FALLBACK] Error converting row to Prospect: {row_err}", exc_info=True)
+                            continue
+                    logger.info(f"📊 [SCRAPED EMAILS] FALLBACK QUERY RESULT: Found {len(prospects)} prospects using fallback query (total available: {total})")
+                except Exception as fallback_err:
+                    logger.error(f"❌ [SCRAPED EMAILS] Fallback query also failed: {fallback_err}", exc_info=True)
+                    # Return empty results instead of crashing
+                    prospects = []
+                    logger.warning(f"⚠️  [SCRAPED EMAILS] Returning empty results due to fallback query failure")
             else:
                 # Re-raise if it's a different error
                 raise

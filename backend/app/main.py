@@ -247,6 +247,41 @@ async def startup():
                 logger.info("✅ All tables are up-to-date with latest schema")
                 logger.info("=" * 60)
                 
+                # CRITICAL: Verify Alembic state after migrations
+                try:
+                    from alembic.script import ScriptDirectory
+                    from alembic.runtime.migration import MigrationContext
+                    from sqlalchemy import create_engine, text
+                    
+                    # Get current database revision
+                    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://") if database_url.startswith("postgresql+asyncpg://") else database_url
+                    engine = create_engine(sync_url, pool_pre_ping=True)
+                    with engine.connect() as conn:
+                        context = MigrationContext.configure(conn)
+                        current_rev = context.get_current_revision()
+                    
+                    # Get head revision from script
+                    script = ScriptDirectory.from_config(alembic_cfg)
+                    heads = script.get_revision("heads")
+                    head_rev = heads.revision if heads else None
+                    
+                    logger.info("=" * 60)
+                    logger.info("📊 ALEMBIC STATE VERIFICATION")
+                    logger.info(f"   Current DB revision: {current_rev}")
+                    logger.info(f"   Head revision: {head_rev}")
+                    if current_rev == head_rev:
+                        logger.info("   ✅ Database is at latest migration")
+                    else:
+                        logger.warning(f"   ⚠️  Database is NOT at latest migration!")
+                        logger.warning(f"   ⚠️  Expected: {head_rev}, Got: {current_rev}")
+                        logger.warning(f"   ⚠️  This may cause schema mismatches!")
+                    logger.info("=" * 60)
+                    
+                    engine.dispose()
+                except Exception as verify_err:
+                    logger.warning(f"⚠️  Could not verify Alembic state: {verify_err}")
+                    # Don't fail startup, but log the warning
+                
                 # Schema validation is now handled by validate_all_tables_exist() after migrations
                 # This ensures all tables (website + social) are validated together
                 logger.info("✅ Migrations completed - schema validation will run next")
@@ -332,18 +367,37 @@ async def startup():
                         'username': 'VARCHAR',
                         'display_name': 'VARCHAR',
                         'follower_count': 'INTEGER',
-                        'engagement_rate': 'NUMERIC'
+                        'engagement_rate': 'NUMERIC',
+                        'bio_text': 'TEXT',
+                        'external_links': 'JSONB',
+                        'scraped_at': 'TIMESTAMP WITH TIME ZONE'
                     }
                     missing_columns = {col: col_type for col, col_type in required_columns.items() if col not in existing_columns}
                     
                     if missing_columns:
                         logger.warning("=" * 80)
-                        logger.warning(f"⚠️  Missing {len(missing_columns)} social columns - applying automatic fix...")
+                        logger.warning(f"⚠️  Missing {len(missing_columns)} Prospect columns - applying automatic fix...")
                         logger.warning(f"⚠️  Missing: {', '.join(missing_columns.keys())}")
+                        logger.warning("⚠️  This should not happen if migrations ran successfully!")
                         
                         # Build ALTER TABLE statement
                         alter_statements = []
                         for col_name, col_type in missing_columns.items():
+                            if col_type == 'NUMERIC':
+                                alter_statements.append(f"ADD COLUMN {col} NUMERIC(5, 2)")
+                            elif col_type == 'JSONB':
+                                alter_statements.append(f"ADD COLUMN {col} JSONB")
+                            elif col_type == 'TIMESTAMP WITH TIME ZONE':
+                                alter_statements.append(f"ADD COLUMN {col} TIMESTAMP WITH TIME ZONE")
+                            elif col_type == 'TEXT':
+                                alter_statements.append(f"ADD COLUMN {col} TEXT")
+                            elif col_type == 'INTEGER':
+                                alter_statements.append(f"ADD COLUMN {col} INTEGER")
+                            elif col_type == 'VARCHAR':
+                                alter_statements.append(f"ADD COLUMN {col} VARCHAR")
+                            else:
+                                alter_statements.append(f"ADD COLUMN {col} {col_type}")
+                        else:
                             if col_type == 'NUMERIC':
                                 alter_statements.append(f"ADD COLUMN {col_name} NUMERIC(5, 2)")
                             elif col_type == 'VARCHAR':
@@ -384,7 +438,7 @@ async def startup():
                                 except Exception as test_err:
                                     logger.error(f"❌ SELECT query test failed: {test_err}")
                             else:
-                                logger.warning(f"⚠️  Verification incomplete - only {len(verified_columns)}/7 columns found")
+                                    logger.warning(f"⚠️  Verification incomplete - only {len(verified_columns)}/10 columns found")
                         except Exception as fix_err:
                             logger.error("=" * 80)
                             logger.error(f"❌ CRITICAL: Automatic schema fix failed: {fix_err}")

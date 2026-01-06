@@ -981,10 +981,22 @@ async def list_scraped_emails(
         ).order_by(Prospect.created_at.desc())
         
         # Get paginated results
-        # SCHEMA MUST BE CORRECT - migrations run on startup ensure all columns exist
-        # If this fails, it indicates a critical schema mismatch that must be fixed
-        result = await db.execute(query.offset(skip).limit(limit))
-        prospects = result.scalars().all()
+        # SCHEMA MUST BE CORRECT - migrations must be run manually at deploy time
+        # If this fails with UndefinedColumnError, migrations need to be run
+        try:
+            result = await db.execute(query.offset(skip).limit(limit))
+            prospects = result.scalars().all()
+        except Exception as query_err:
+            error_str = str(query_err).lower()
+            if "undefinedcolumn" in error_str or "does not exist" in error_str or "bio_text" in error_str:
+                logger.error(f"❌ [SCRAPED EMAILS] Schema mismatch detected: {query_err}")
+                await db.rollback()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Database schema mismatch: Missing required columns. Please run migrations: 'alembic upgrade head' or use the /api/health/migrate endpoint. Error: {str(query_err)}"
+                )
+            raise  # Re-raise other errors
+        
         logger.info(f"📊 [SCRAPED EMAILS] QUERY RESULT: Found {len(prospects)} prospects from database query (total available: {total})")
         
         # CRITICAL: Verify data integrity - total must match actual data

@@ -113,7 +113,16 @@ else:
 # Encode password to handle special characters (critical for Supabase)
 DATABASE_URL = encode_password_in_url(temp_url)
 if DATABASE_URL != temp_url:
-    logger.info("Properly encoded password in DATABASE_URL to handle special characters")
+    logger.info("✅ Properly encoded password in DATABASE_URL to handle special characters")
+    # Log the hostname to verify it's correct (without exposing password)
+    try:
+        if "@" in DATABASE_URL:
+            host_part = DATABASE_URL.split("@")[1].split("/")[0]
+            logger.info(f"📊 Connection target: {host_part}")
+    except Exception:
+        pass
+else:
+    logger.debug("No password encoding needed (or no password found)")
 
 # Note: SSL for asyncpg is configured via connect_args, not URL parameters
 # We'll handle SSL in the engine creation below

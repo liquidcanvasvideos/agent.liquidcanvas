@@ -852,18 +852,22 @@ async def startup():
             migration_success = False
             # Continue to start app even if migrations fail - DO NOT EXIT
     
-    # Validate website tables exist after migrations
-    # Social outreach now uses prospects table, so no separate validation needed
+    # Validate schema after migrations
+    # Use the schema validator to check if all required columns exist
     schema_valid = False
     try:
-        from app.utils.schema_validator import validate_website_tables_exist
-        website_valid, website_missing = await validate_website_tables_exist(engine)
-        if website_valid:
-            logger.info("✅ Database schema validated - Website outreach tables present")
-            schema_valid = True
-        else:
-            logger.warning(f"⚠️  Some website tables missing: {', '.join(website_missing)}")
-            schema_valid = False
+        from app.utils.schema_validator import validate_prospect_schema
+        from app.db.database import AsyncSessionLocal
+        
+        async with AsyncSessionLocal() as db_session:
+            validation_result = await validate_prospect_schema(db_session)
+            if validation_result.get("valid", False):
+                logger.info("✅ Database schema validated - All required columns present")
+                schema_valid = True
+            else:
+                missing = validation_result.get("missing_columns", [])
+                logger.warning(f"⚠️  Some columns missing: {', '.join(missing)}")
+                schema_valid = False
     except Exception as validation_error:
         logger.error("=" * 80)
         logger.error("❌ CRITICAL: Schema validation check failed")

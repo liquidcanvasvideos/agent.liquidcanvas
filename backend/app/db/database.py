@@ -110,8 +110,12 @@ def encode_password_in_url(url: str) -> str:
         logger.debug(f"Password length: {len(password)} characters")
         
         # Check if password is already URL-encoded (contains %)
-        if "%" in password:
+        # But be careful - some passwords might legitimately contain %
+        # Check if it looks like URL encoding (has % followed by hex digits)
+        import re
+        if re.search(r'%[0-9A-Fa-f]{2}', password):
             logger.info("ℹ️  Password appears to already be URL-encoded, skipping re-encoding")
+            logger.debug(f"Password contains URL-encoded characters: {len(re.findall(r'%[0-9A-Fa-f]{2}', password))} encoded sequences")
             return url
         
         # URL-encode the password (use quote, not quote_plus, for passwords)

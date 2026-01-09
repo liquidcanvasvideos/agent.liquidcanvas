@@ -35,7 +35,29 @@ if raw_database_url:
             user_pass = parts[0].split(":")
             if len(user_pass) >= 2:
                 safe_url = f"{user_pass[0]}:****@{parts[1]}"
-    logger.info(f"📊 DATABASE_URL: {safe_url}")
+    logger.info("=" * 80)
+    logger.info(f"📊 RAW DATABASE_URL (masked): {safe_url}")
+    logger.info(f"📊 DATABASE_URL length: {len(raw_database_url)} characters")
+    # Extract and log hostname immediately
+    if "@" in raw_database_url:
+        try:
+            host_part = raw_database_url.split("@")[1].split("/")[0]
+            hostname = host_part.split(":")[0]
+            logger.info(f"📊 EXTRACTED HOSTNAME: {hostname}")
+            logger.info(f"📊 HOSTNAME LENGTH: {len(hostname)} characters")
+            logger.info(f"📊 HOSTNAME PARTS: {len(hostname.split('.'))} parts")
+            if ".supabase.co" in hostname:
+                if len(hostname.split(".")) < 4:
+                    logger.error("=" * 80)
+                    logger.error(f"❌ CRITICAL: HOSTNAME IS TRUNCATED!")
+                    logger.error(f"❌ Expected: db.[ref].supabase.co (4+ parts)")
+                    logger.error(f"❌ Got: {hostname} ({len(hostname.split('.'))} parts)")
+                    logger.error("=" * 80)
+                else:
+                    logger.info(f"✅ Hostname format looks correct")
+        except Exception as e:
+            logger.error(f"❌ Error extracting hostname: {e}")
+    logger.info("=" * 80)
 else:
     logger.warning("⚠️  DATABASE_URL environment variable not set!")
 
@@ -196,7 +218,18 @@ def _get_engine():
                     connect_args = {
                         "ssl": ssl.create_default_context()
                     }
-                    logger.info("Configured SSL for Supabase connection")
+                    logger.info("✅ Configured SSL for Supabase connection")
+                
+                # Log the final URL being used (without password) for debugging
+                try:
+                    if "@" in DATABASE_URL:
+                        final_host = DATABASE_URL.split("@")[1].split("/")[0].split(":")[0]
+                        logger.info(f"🔗 Creating engine with hostname: {final_host}")
+                        if ".supabase.co" in final_host and len(final_host.split(".")) < 4:
+                            logger.error(f"❌ CRITICAL: Hostname is truncated in final DATABASE_URL: {final_host}")
+                            logger.error(f"❌ This will cause connection failures!")
+                except Exception as e:
+                    logger.warning(f"Could not log final hostname: {e}")
                 
                 _engine_instance = create_async_engine(
                     DATABASE_URL,
@@ -207,6 +240,7 @@ def _get_engine():
                     max_overflow=20,
                     connect_args=connect_args
                 )
+                logger.info("✅ Async engine created successfully")
     return _engine_instance
 
 # Check if we're being imported by Alembic

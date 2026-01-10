@@ -249,8 +249,16 @@ def _resolve_to_ipv4_sync(url: str) -> str:
     Resolve Supabase hostname to IPv4 address synchronously.
     Returns URL with IPv4 address, or original URL if resolution fails.
     Uses multiple DNS resolution strategies for robustness.
+    
+    NOTE: If using connection pooler (port 6543 or pgbouncer=true),
+    skip IPv4 resolution as the pooler handles IPv4 connections.
     """
     if "@" not in url or ".supabase.co" not in url:
+        return url
+    
+    # Skip IPv4 resolution for connection pooler - it handles IPv4 internally
+    if ":6543" in url or "pgbouncer=true" in url.lower():
+        logger.info("ℹ️  Using connection pooler (port 6543) - skipping IPv4 resolution (pooler handles IPv4)")
         return url
     
     try:

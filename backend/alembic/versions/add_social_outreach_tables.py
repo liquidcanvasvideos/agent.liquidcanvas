@@ -48,12 +48,17 @@ def upgrade():
         END $$;
     """)
     
+    # Create enum types for use in table columns (with create_type=False to avoid duplicate creation)
+    socialplatform_enum = postgresql.ENUM('linkedin', 'instagram', 'tiktok', name='socialplatform', create_type=False)
+    qualificationstatus_enum = postgresql.ENUM('pending', 'qualified', 'rejected', name='qualificationstatus', create_type=False)
+    messagestatus_enum = postgresql.ENUM('pending', 'sent', 'failed', 'delivered', 'read', name='messagestatus', create_type=False)
+    
     # Create social_discovery_jobs table (idempotent)
     if 'social_discovery_jobs' not in existing_tables:
         op.create_table(
             'social_discovery_jobs',
             sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
-            sa.Column('platform', sa.Enum('linkedin', 'instagram', 'tiktok', name='socialplatform'), nullable=False),
+            sa.Column('platform', socialplatform_enum, nullable=False),
             sa.Column('filters', postgresql.JSON, nullable=True),
             sa.Column('status', sa.String(), nullable=False, server_default='pending'),
             sa.Column('results_count', sa.Integer(), server_default='0'),
@@ -70,7 +75,7 @@ def upgrade():
         op.create_table(
             'social_profiles',
             sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
-            sa.Column('platform', sa.Enum('linkedin', 'instagram', 'tiktok', name='socialplatform'), nullable=False),
+            sa.Column('platform', socialplatform_enum, nullable=False),
             sa.Column('handle', sa.String(), nullable=False),
             sa.Column('profile_url', sa.Text(), nullable=False, unique=True),
             sa.Column('display_name', sa.String(), nullable=True),
@@ -78,7 +83,7 @@ def upgrade():
             sa.Column('followers_count', sa.Integer(), server_default='0'),
             sa.Column('location', sa.String(), nullable=True),
             sa.Column('is_business', sa.Boolean(), nullable=False, server_default='false'),
-            sa.Column('qualification_status', sa.Enum('pending', 'qualified', 'rejected', name='qualificationstatus'), nullable=False, server_default='pending'),
+            sa.Column('qualification_status', qualificationstatus_enum, nullable=False, server_default='pending'),
             sa.Column('discovery_job_id', postgresql.UUID(as_uuid=True), nullable=True),
             sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
             sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
@@ -97,7 +102,7 @@ def upgrade():
             'social_drafts',
             sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
             sa.Column('profile_id', postgresql.UUID(as_uuid=True), nullable=False),
-            sa.Column('platform', sa.Enum('linkedin', 'instagram', 'tiktok', name='socialplatform'), nullable=False),
+            sa.Column('platform', socialplatform_enum, nullable=False),
             sa.Column('draft_body', sa.Text(), nullable=False),
             sa.Column('is_followup', sa.Boolean(), nullable=False, server_default='false'),
             sa.Column('sequence_index', sa.Integer(), nullable=False, server_default='0'),
@@ -114,9 +119,9 @@ def upgrade():
             'social_messages',
             sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
             sa.Column('profile_id', postgresql.UUID(as_uuid=True), nullable=False),
-            sa.Column('platform', sa.Enum('linkedin', 'instagram', 'tiktok', name='socialplatform'), nullable=False),
+            sa.Column('platform', socialplatform_enum, nullable=False),
             sa.Column('message_body', sa.Text(), nullable=False),
-            sa.Column('status', sa.Enum('pending', 'sent', 'failed', 'delivered', 'read', name='messagestatus'), nullable=False, server_default='pending'),
+            sa.Column('status', messagestatus_enum, nullable=False, server_default='pending'),
             sa.Column('sent_at', sa.DateTime(timezone=True), nullable=True),
             sa.Column('error_message', sa.Text(), nullable=True),
             sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),

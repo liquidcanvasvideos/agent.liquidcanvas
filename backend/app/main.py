@@ -905,24 +905,37 @@ async def startup():
     # Auto-fix discovery_query_id column if missing (non-blocking)
     try:
         from sqlalchemy import text
-        async with engine.begin() as conn:
+        from app.db.database import AsyncSessionLocal
+        
+        logger.info("🔍 Checking for discovery_query_id column...")
+        async with AsyncSessionLocal() as db:
             # Check if column exists
-            result = await conn.execute(text("""
+            result = await db.execute(text("""
                 SELECT column_name 
                 FROM information_schema.columns 
                 WHERE table_name = 'prospects' 
                 AND column_name = 'discovery_query_id'
                 AND table_schema = 'public'
             """))
-            if not result.fetchone():
+            row = result.fetchone()
+            if not row:
+                logger.info("=" * 80)
                 logger.info("⚠️  discovery_query_id column missing - adding it automatically...")
-                await conn.execute(text("ALTER TABLE prospects ADD COLUMN discovery_query_id UUID"))
-                await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_prospects_discovery_query_id ON prospects(discovery_query_id)"))
+                logger.info("=" * 80)
+                await db.execute(text("ALTER TABLE prospects ADD COLUMN discovery_query_id UUID"))
+                await db.execute(text("CREATE INDEX IF NOT EXISTS ix_prospects_discovery_query_id ON prospects(discovery_query_id)"))
+                await db.commit()
+                logger.info("=" * 80)
                 logger.info("✅ Successfully added discovery_query_id column and index")
+                logger.info("=" * 80)
             else:
-                logger.debug("✅ discovery_query_id column exists")
+                logger.info("✅ discovery_query_id column already exists")
     except Exception as fix_error:
-        logger.warning(f"⚠️  Could not auto-fix discovery_query_id column: {fix_error}")
+        logger.error("=" * 80)
+        logger.error(f"❌ Could not auto-fix discovery_query_id column: {fix_error}")
+        logger.error("=" * 80)
+        import traceback
+        logger.error(traceback.format_exc())
         # Non-blocking - continue startup
     
     # Validate schema after migrations

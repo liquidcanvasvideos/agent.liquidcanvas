@@ -23,20 +23,26 @@ def upgrade():
     inspector = inspect(conn)
     existing_tables = inspector.get_table_names()
     
+    # If all tables already exist, skip this migration (idempotent)
+    required_tables = ['social_discovery_jobs', 'social_profiles', 'social_drafts', 'social_messages']
+    if all(table in existing_tables for table in required_tables):
+        print("✅ All social tables already exist - skipping migration")
+        return
+    
     # Check if enum types exist (more explicit check)
     def enum_exists(enum_name):
         result = conn.execute(text("""
-            SELECT 1 FROM pg_type WHERE typname = %s
-        """), (enum_name,))
+            SELECT 1 FROM pg_type WHERE typname = :enum_name
+        """), {"enum_name": enum_name})
         return result.fetchone() is not None
     
     # Create enum types (idempotent - only create if they don't exist)
     if not enum_exists('socialplatform'):
-        op.execute("CREATE TYPE socialplatform AS ENUM ('linkedin', 'instagram', 'tiktok')")
+        conn.execute(text("CREATE TYPE socialplatform AS ENUM ('linkedin', 'instagram', 'tiktok')"))
     if not enum_exists('qualificationstatus'):
-        op.execute("CREATE TYPE qualificationstatus AS ENUM ('pending', 'qualified', 'rejected')")
+        conn.execute(text("CREATE TYPE qualificationstatus AS ENUM ('pending', 'qualified', 'rejected')"))
     if not enum_exists('messagestatus'):
-        op.execute("CREATE TYPE messagestatus AS ENUM ('pending', 'sent', 'failed', 'delivered', 'read')")
+        conn.execute(text("CREATE TYPE messagestatus AS ENUM ('pending', 'sent', 'failed', 'delivered', 'read')"))
     
     # Create enum types for use in table columns (with create_type=False to avoid duplicate creation)
     socialplatform_enum = postgresql.ENUM('linkedin', 'instagram', 'tiktok', name='socialplatform', create_type=False)

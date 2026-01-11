@@ -18,35 +18,25 @@ depends_on = None
 
 def upgrade():
     # Get existing tables first (for idempotent checks)
-    from sqlalchemy import inspect
+    from sqlalchemy import inspect, text
     conn = op.get_bind()
     inspector = inspect(conn)
     existing_tables = inspector.get_table_names()
     
+    # Check if enum types exist (more explicit check)
+    def enum_exists(enum_name):
+        result = conn.execute(text("""
+            SELECT 1 FROM pg_type WHERE typname = %s
+        """), (enum_name,))
+        return result.fetchone() is not None
+    
     # Create enum types (idempotent - only create if they don't exist)
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE socialplatform AS ENUM ('linkedin', 'instagram', 'tiktok');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
-    """)
-    
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE qualificationstatus AS ENUM ('pending', 'qualified', 'rejected');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
-    """)
-    
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE messagestatus AS ENUM ('pending', 'sent', 'failed', 'delivered', 'read');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
-    """)
+    if not enum_exists('socialplatform'):
+        op.execute("CREATE TYPE socialplatform AS ENUM ('linkedin', 'instagram', 'tiktok')")
+    if not enum_exists('qualificationstatus'):
+        op.execute("CREATE TYPE qualificationstatus AS ENUM ('pending', 'qualified', 'rejected')")
+    if not enum_exists('messagestatus'):
+        op.execute("CREATE TYPE messagestatus AS ENUM ('pending', 'sent', 'failed', 'delivered', 'read')")
     
     # Create enum types for use in table columns (with create_type=False to avoid duplicate creation)
     socialplatform_enum = postgresql.ENUM('linkedin', 'instagram', 'tiktok', name='socialplatform', create_type=False)

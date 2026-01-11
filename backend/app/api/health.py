@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/fix-discovery-query-id")
+@router.post("/health/fix-discovery-query-id")
 async def fix_discovery_query_id_column():
     """
     Manually fix discovery_query_id column if missing.

@@ -1,0 +1,20 @@
+# Verification Protocol
+
+## Mandatory Post-Task Reporting
+
+Every task completion MUST end with this "Review Summary":
+
+### 1. THE WHY
+Architectural justification for the chosen implementation. Explain design decisions, trade-offs, and why this approach was selected over alternatives.
+
+### 2. EDGE CASES
+List 3 specific scenarios handled (e.g., nulls, timeouts, network failures, empty arrays, invalid inputs, concurrent modifications).
+
+### 3. TEST PLAN
+3-step manual verification plan:
+- **Command**: Exact command or action to execute
+- **Input**: Test data or scenario
+- **Observation**: Expected result or behavior
+
+### 4. AUDIT
+Ask to generate Unit Tests or update Documentation. Ensure test coverage for critical paths and edge cases.

@@ -1,0 +1,512 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { ExternalLink, RefreshCw, Loader2, Globe, CheckCircle2, X, Trash2, Download, Scissors } from 'lucide-react'
+import { listWebsites, pipelineApprove, exportProspectsCSV, pipelineScrape } from '@/lib/api'
+
+interface Website {
+  id: string
+  domain: string
+  url: string
+  title: string
+  category: string
+  location: string
+  discovery_job_id: string | null
+  discovered_at: string | null
+  scrape_status: string
+  approval_status: string
+}
+
+export default function WebsitesTable() {
+  const [websites, setWebsites] = useState<Website[]>([])
+  const [loading, setLoading] = useState(true)
+  const [skip, setSkip] = useState(0)
+  const [total, setTotal] = useState(0)
+  const limit = 50
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [actionLoading, setActionLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
+
+  // Available categories
+  const availableCategories = [
+    'Art Lovers', 'Interior Design', 'Pet Lovers', 'Dogs and Cat Owners - Fur Parent', 'Childhood Development', 
+    'Holidays', 'Famous Quotes', 'Home Decor', 
+    'Audio Visual', 'Interior Decor', 'Holiday Decor', 'Home Tech', 
+    'Parenting (Mom Site)', 'NFTs', 'Museum'
+  ]
+
+  const normalizeCategoryForFilter = (category: string) => {
+    if (category === 'Parenting (Mom Site)') return 'Parenting'
+    return category
+  }
+
+  const mapCategoryForDisplay = (category: string) => {
+    if (category === 'Parenting') return 'Parenting (Mom Site)'
+    return category
+  }
+
+  const loadWebsites = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const normalizedSelectedCategory =
+        selectedCategory !== 'all' ? normalizeCategoryForFilter(selectedCategory) : 'all'
+      const response = await listWebsites(skip, limit, normalizedSelectedCategory)
+      console.log('📊 [WEBSITES] API Response:', { 
+        dataLength: response?.data?.length, 
+        total: response?.total,
+        hasData: !!response?.data,
+        isArray: Array.isArray(response?.data)
+      })
+      // CRITICAL: Log raw response before any filtering
+      console.log('📊 [WEBSITES] RAW API RESPONSE:', {
+        dataLength: response?.data?.length,
+        total: response?.total,
+        hasData: !!response?.data,
+        isArray: Array.isArray(response?.data),
+        firstItem: response?.data?.[0]
+      })
+      
+      // CRITICAL: If backend says there's data but we got empty array, this is an error
+      if (response?.total > 0 && (!response?.data || response.data.length === 0)) {
+        const errorMsg = `Backend reports ${response.total} websites but returned empty data array. This indicates a data visibility issue.`
+        console.error(`❌ [WEBSITES] ${errorMsg}`)
+        setError(errorMsg)
+        setWebsites([])
+        setTotal(response.total)
+        return
+      }
+      
+      if (response?.data && Array.isArray(response.data)) {
+        let websitesData = response.data.map((w: any) => ({
+          ...w,
+          category: w?.category ? mapCategoryForDisplay(String(w.category)) : w?.category,
+        }))
+        
+        // Sort by category in ascending order
+        websitesData.sort((a: Website, b: Website) => {
+          const catA = a.category || ''
+          const catB = b.category || ''
+          return catA.localeCompare(catB)
+        })
+        
+        setWebsites(websitesData)
+        setTotal(response.total ?? websitesData.length)
+        console.log('✅ [WEBSITES] Set websites:', websitesData.length, 'total:', response.total)
+      } else {
+        console.warn('⚠️ [WEBSITES] Invalid response structure:', response)
+        setWebsites([])
+        setTotal(0)
+      }
+    } catch (error: any) {
+      // CRITICAL: Do not suppress errors - log them clearly
+      console.error('❌ [WEBSITES] Failed to load websites:', error)
+      console.error('❌ [WEBSITES] Error details:', {
+        message: error?.message,
+        stack: error?.stack,
+        response: error?.response,
+        status: error?.status
+      })
+      
+      let errorMessage = error?.message || 'Failed to load websites. Check if backend is running.'
+      
+      // In development, show full error
+      if (process.env.NODE_ENV === 'development') {
+        errorMessage = `${errorMessage} (Full error: ${error?.message || 'Unknown error'})`
+      }
+      
+      setError(errorMessage)
+      setWebsites([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadWebsites()
+    const interval = setInterval(loadWebsites, 10000) // Refresh every 10 seconds
+    return () => clearInterval(interval)
+  }, [skip, selectedCategory])
+
+  const handleApprove = async () => {
+    if (selected.size === 0) {
+      setError('Please select at least one website to approve')
+      return
+    }
+
+    setActionLoading(true)
+    setError(null)
+
+    try {
+      await pipelineApprove({
+        prospect_ids: Array.from(selected),
+        action: 'approve'
+      })
+      setSelected(new Set())
+      await loadWebsites()
+    } catch (err: any) {
+      setError(err.message || 'Failed to approve websites')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleApproveSingle = async (id: string) => {
+    setActionLoading(true)
+    setError(null)
+    try {
+      await pipelineApprove({
+        prospect_ids: [id],
+        action: 'approve',
+      })
+      const newSelected = new Set(selected)
+      newSelected.delete(id)
+      setSelected(newSelected)
+      await loadWebsites()
+    } catch (err: any) {
+      setError(err.message || 'Failed to approve website')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this website?')) return
+
+    setActionLoading(true)
+    try {
+      await pipelineApprove({
+        prospect_ids: [id],
+        action: 'delete'
+      })
+      await loadWebsites()
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete website')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleReject = async (id: string) => {
+    setActionLoading(true)
+    try {
+      await pipelineApprove({
+        prospect_ids: [id],
+        action: 'reject'
+      })
+      await loadWebsites()
+    } catch (err: any) {
+      setError(err.message || 'Failed to reject website')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleScrape = async () => {
+    setActionLoading(true)
+    setError(null)
+    try {
+      const normalizedSelectedCategory =
+        selectedCategory !== 'all' ? normalizeCategoryForFilter(selectedCategory) : 'all'
+
+      if (selected.size > 0) {
+        await pipelineScrape({ prospect_ids: Array.from(selected) })
+      } else if (normalizedSelectedCategory !== 'all') {
+        await pipelineScrape({ filters: { category: normalizedSelectedCategory } })
+      } else {
+        await pipelineScrape()
+      }
+
+      setSelected(new Set())
+      await loadWebsites()
+      const event = new CustomEvent('refreshPipelineStatus')
+      window.dispatchEvent(event)
+    } catch (err: any) {
+      setError(err.message || 'Failed to start scraping')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  if (loading && websites.length === 0) {
+    return (
+      <div className="glass rounded-3xl shadow-xl p-8 animate-fade-in">
+        <div className="text-center py-12">
+          <div className="relative inline-block">
+            <div className="w-12 h-12 rounded-full border-4 border-liquid-200"></div>
+            <div className="absolute top-0 left-0 w-12 h-12 rounded-full border-4 border-t-liquid-500 border-r-purple-500 animate-spin"></div>
+          </div>
+          <p className="text-gray-600 mt-4 font-medium">Loading websites...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="glass rounded-xl shadow-lg border border-white/20 p-3 animate-fade-in">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-sm font-bold text-olive-700 mb-1">Discovered Websites</h2>
+          <p className="text-sm text-gray-600">
+            Websites found during discovery. Approve them to proceed with scraping.
+          </p>
+        </div>
+        <div className="flex items-center space-x-2">
+          <select
+            value={selectedCategory}
+            onChange={(e) => {
+              // Only filter - never update categories
+              setSelectedCategory(e.target.value)
+            }}
+            className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-olive-500 focus:border-olive-500 bg-white"
+            title="Filter by category (does not update categories)"
+          >
+            <option value="all">All Categories (Filter)</option>
+            {availableCategories.map((cat) => (
+              <option key={cat} value={cat}>{cat} (Filter)</option>
+            ))}
+          </select>
+          <button
+            onClick={async () => {
+              try {
+                const blob = await exportProspectsCSV(undefined, 'website')
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `websites_${new Date().toISOString().split('T')[0]}.csv`
+                document.body.appendChild(a)
+                a.click()
+                window.URL.revokeObjectURL(url)
+                document.body.removeChild(a)
+              } catch (error: any) {
+                alert(`Failed to export CSV: ${error.message}`)
+              }
+            }}
+            className="px-2 py-1 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-1 transition-all duration-200 font-medium"
+          >
+            <Download className="w-3 h-3" />
+            <span>Download CSV</span>
+          </button>
+          <button
+            onClick={handleScrape}
+            disabled={actionLoading}
+            className="px-2 py-1 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-1 transition-all duration-200 font-medium disabled:opacity-50"
+            title="Start scraping (selected, filtered category, or all websites)"
+          >
+            {actionLoading ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Starting...</span>
+              </>
+            ) : (
+              <>
+                <Scissors className="w-3 h-3" />
+                <span>Start Scraping</span>
+              </>
+            )}
+          </button>
+          <button
+            onClick={loadWebsites}
+            disabled={loading}
+            className="px-2 py-1 text-xs glass hover:bg-white/80 text-gray-700 rounded-lg flex items-center space-x-1 disabled:opacity-50 transition-all duration-200 font-medium hover:shadow-md"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 p-4 bg-gradient-to-r from-red-50 to-pink-50 border-2 border-red-300 rounded-xl text-red-700 text-sm font-medium animate-slide-up">
+          {error}
+        </div>
+      )}
+
+      {websites.length === 0 && !loading ? (
+        <div className="text-center py-12">
+          <Globe className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600 font-medium mb-2">No websites discovered yet</p>
+          <p className="text-gray-500 text-sm mb-4">
+            Run a discovery job in the Pipeline tab to find websites.
+          </p>
+          <p className="text-gray-400 text-xs">
+            Discovery results will appear here once jobs complete.
+          </p>
+        </div>
+      ) : (
+        <>
+          {selected.size > 0 && (
+            <div className="mb-2 p-2 bg-gradient-to-r from-olive-50 to-olive-50 border border-olive-200 rounded-lg flex items-center justify-between shadow-sm animate-slide-up">
+              <p className="text-sm font-semibold text-gray-700">
+                {selected.size} website{selected.size !== 1 ? 's' : ''} selected
+              </p>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleApprove}
+                  disabled={actionLoading}
+                  className="px-2 py-1 text-xs bg-olive-600 text-white rounded-lg hover:bg-olive-700 hover:shadow-md transition-all duration-200 disabled:opacity-50 flex items-center space-x-1 font-semibold shadow-sm"
+                >
+                  {actionLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Approving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Approve Selected</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-3 px-4">
+                    <input
+                      type="checkbox"
+                      checked={selected.size === websites.length && websites.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelected(new Set(websites.map(w => w.id)))
+                        } else {
+                          setSelected(new Set())
+                        }
+                      }}
+                      className="w-4 h-4 text-olive-600"
+                    />
+                  </th>
+                  <th className="text-left py-2 px-3 text-xs font-bold text-gray-700 uppercase tracking-wider">Domain</th>
+                  <th className="text-left py-2 px-3 text-xs font-bold text-gray-700 uppercase tracking-wider">Title</th>
+                  <th className="text-left py-2 px-3 text-xs font-bold text-gray-700 uppercase tracking-wider">Category</th>
+                  <th className="text-left py-2 px-3 text-xs font-bold text-gray-700 uppercase tracking-wider">Location</th>
+                  <th className="text-left py-2 px-3 text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
+                  <th className="text-left py-2 px-3 text-xs font-bold text-gray-700 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {websites.map(website => (
+                  <tr key={website.id} className="border-b border-gray-100 hover:bg-gradient-to-r hover:from-liquid-50/30 hover:to-purple-50/30 transition-all duration-200">
+                    <td className="py-2 px-3 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(website.id)}
+                        onChange={(e) => {
+                          const newSelected = new Set(selected)
+                          if (e.target.checked) {
+                            newSelected.add(website.id)
+                          } else {
+                            newSelected.delete(website.id)
+                          }
+                          setSelected(newSelected)
+                        }}
+                        className="w-4 h-4 text-olive-600"
+                      />
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="flex items-center space-x-2">
+                        <a
+                          href={website.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-olive-700 hover:underline text-xs font-semibold flex items-center space-x-1 transition-all duration-200"
+                        >
+                          <span>{website.domain}</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </td>
+                    <td className="py-2 px-3 text-xs text-gray-700 font-medium">{website.title}</td>
+                    <td className="py-2 px-3 text-xs text-gray-600">{website.category}</td>
+                    <td className="py-2 px-3 text-xs text-gray-600">{website.location}</td>
+                    <td className="py-4 px-6">
+                      <div className="flex flex-col space-y-1">
+                        <span className={`px-3 py-1 rounded-lg text-xs font-semibold shadow-sm ${
+                          website.approval_status === 'approved' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' :
+                          website.approval_status === 'rejected' ? 'bg-gradient-to-r from-red-500 to-pink-600 text-white' :
+                          'bg-gray-200 text-gray-700'
+                        }`}>
+                          {website.approval_status || 'PENDING'}
+                        </span>
+                        <span className={`px-3 py-1 rounded-lg text-xs font-semibold shadow-sm ${
+                          website.scrape_status === 'SCRAPED' || website.scrape_status === 'ENRICHED' ? 'bg-gradient-to-r from-blue-500 to-cyan-600 text-white' :
+                          website.scrape_status === 'NO_EMAIL_FOUND' ? 'bg-gradient-to-r from-yellow-400 to-amber-500 text-white' :
+                          'bg-gray-200 text-gray-700'
+                        }`}>
+                          {website.scrape_status || 'NOT_STARTED'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="flex items-center space-x-2">
+                        {website.approval_status !== 'approved' && (
+                          <button
+                            onClick={() => handleApproveSingle(website.id)}
+                            disabled={actionLoading}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-xl transition-all duration-200 disabled:opacity-50 hover:scale-110"
+                            title="Approve"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        {website.approval_status !== 'rejected' && (
+                          <button
+                            onClick={() => handleReject(website.id)}
+                            disabled={actionLoading}
+                            className="p-2 text-yellow-600 hover:bg-yellow-50 rounded-xl transition-all duration-200 disabled:opacity-50 hover:scale-110"
+                            title="Reject"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDelete(website.id)}
+                          disabled={actionLoading}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 disabled:opacity-50 hover:scale-110"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {total > limit && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Showing {skip + 1}-{Math.min(skip + limit, total)} of {total} websites
+              </p>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setSkip(Math.max(0, skip - limit))}
+                  disabled={skip === 0}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setSkip(skip + limit)}
+                  disabled={skip + limit >= total}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+    </div>
+  )
+}

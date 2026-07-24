@@ -1,0 +1,13 @@
+# Clean Code Rigor
+
+## NAMING
+Intent-revealing names only. No abbreviations. Use domain language. Boolean variables should be questions (e.g., `isValid`, `hasPermission`).
+
+## MODULARITY
+Functions > 40 lines must be flagged for refactoring. Extract complex logic into well-named helper functions. Keep functions focused on a single responsibility.
+
+## COMMENTS
+Document 'Why', not 'What'. All exports need docblocks. Explain business logic, not implementation details. Remove commented-out code.
+
+## REFACTORING
+Smallest diff possible. Use @codebase to match existing patterns. Maintain consistency with existing codebase style. Prefer incremental improvements over large rewrites.

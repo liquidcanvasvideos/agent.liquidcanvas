@@ -1,0 +1,22 @@
+# Tech Stack Best Practices
+
+## Detected Stack
+- **Frontend**: Next.js 14, React 18, TypeScript, Tailwind CSS
+- **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0+, Alembic
+- **Database**: PostgreSQL (asyncpg/psycopg2)
+- **Deployment**: Vercel (frontend), Render (backend)
+
+## 1. FASTAPI ASYNC PATTERNS
+Always use `async def` for route handlers. Use `AsyncSession` from SQLAlchemy. Never mix sync/async database operations. Use `httpx.AsyncClient` for external API calls. Handle connection pooling properly with `asyncpg`.
+
+## 2. NEXT.JS APP ROUTER CONVENTIONS
+Use Server Components by default. Mark Client Components with `'use client'` directive. Leverage `async` Server Components for data fetching. Use Route Handlers (`route.ts`) for API endpoints. Implement proper error boundaries and loading states.
+
+## 3. SQLALCHEMY 2.0 SYNTAX
+Use `select()` instead of `session.query()`. Prefer `AsyncSession` over `Session`. Use `relationship()` with proper `back_populates`. Always use Alembic for schema migrations. Never modify database schema directly.
+
+## 4. TYPE SAFETY ENFORCEMENT
+TypeScript strict mode enabled. Use Pydantic models for API request/response validation. Define explicit return types for all functions. Use TypeScript interfaces for component props. Validate environment variables with Pydantic Settings.
+
+## 5. DEPLOYMENT & ENVIRONMENT MANAGEMENT
+Never commit `.env` files. Use environment variables for all configuration. Separate `DATABASE_URL` for dev/staging/prod. Use Vercel environment variables for frontend config. Use Render environment variables for backend config. Always test migrations in staging before production.

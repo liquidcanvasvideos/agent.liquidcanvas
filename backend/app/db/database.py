@@ -178,32 +178,31 @@ if "?" in DATABASE_URL:
     # Track if we're using pooler (for detection) before removing the parameter
     is_pooler_detected = "pgbouncer=true" in query_string.lower() or "pgbouncer=1" in query_string.lower()
     
-    # Remove sslmode and pgbouncer parameters from query string
+    # Remove query params asyncpg doesn't accept as connect() kwargs
+    # (sslmode, pgbouncer, and Neon's channel_binding all fall in this bucket)
+    UNSUPPORTED_ASYNCPG_PARAMS = ("sslmode=", "pgbouncer=", "channel_binding=")
     if query_string:
         query_params = []
         for param in query_string.split("&"):
             param_lower = param.lower()
-            # Keep all params except sslmode and pgbouncer
-            if not param_lower.startswith("sslmode=") and not param_lower.startswith("pgbouncer="):
+            if not param_lower.startswith(UNSUPPORTED_ASYNCPG_PARAMS):
                 query_params.append(param)
-        
+
         if query_params:
             DATABASE_URL = f"{base_url}?{'&'.join(query_params)}"
         else:
             DATABASE_URL = base_url
-        
-        removed_params = []
-        if "sslmode=" in query_string.lower():
-            removed_params.append("sslmode")
-        if "pgbouncer=" in query_string.lower():
-            removed_params.append("pgbouncer")
-        
+
+        removed_params = [p.rstrip("=") for p in UNSUPPORTED_ASYNCPG_PARAMS if p in query_string.lower()]
+
         if removed_params:
             logger.info(f"ℹ️  Removed unsupported query parameters: {', '.join(removed_params)}")
             if "sslmode" in removed_params:
                 logger.info("   (SSL configured via connect_args instead)")
             if "pgbouncer" in removed_params:
                 logger.info("   (pgbouncer parameter used only for pooler detection)")
+            if "channel_binding" in removed_params:
+                logger.info("   (channel_binding not supported by asyncpg's connect() kwargs)")
     
     # Note: is_pooler_detected is tracked but not used here - it's checked via URL pattern matching later
 

@@ -97,6 +97,14 @@ def run_migrations_online() -> None:
     connectable = create_engine(database_url, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
+        # Many migrations in this history wrap individual DDL statements in
+        # try/except (drop-index-if-exists, idempotent column checks),
+        # assuming each statement succeeds or fails independently. Under a
+        # single shared transaction, one failed statement poisons every
+        # statement after it for the rest of the run. Autocommit makes each
+        # statement genuinely independent, matching what those migrations
+        # were written to expect.
+        connection = connection.execution_options(isolation_level="AUTOCOMMIT")
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
